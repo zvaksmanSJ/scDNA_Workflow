@@ -38,7 +38,7 @@
   "_comment_VEP": "produced by setup.sh section 4",
   "ResolveOmeDnaWorkflow.vep_cache_dir_tar": "wdl_runtime/refs/annotation/vep_cache/vep_cache.tar",
   "ResolveOmeDnaWorkflow.vep_cache_version": 111,
-  "ResolveOmeDnaWorkflow.snpeff_db": "GRCh38.105",
+  "ResolveOmeDnaWorkflow.snpeff_db": "GRCh38.111",
   "ResolveOmeDnaWorkflow.vep_container": "docker://ensemblorg/ensembl-vep:release_111.0",
   "_comment_CNV_SV": "cnv_reference_cnn intentionally omitted -- CNVkit builds its own flat reference per cell",
   "_comment_PHASING": "produced by setup.sh section 5; one entry per autosome 1-22 (chrX is excluded from phasing by design)",

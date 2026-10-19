@@ -269,7 +269,7 @@ task SnpEffAnnotate {
   input {
     String sample_id
     File merged_vep_vcf
-    String snpeff_db = "GRCh38.105"
+    String snpeff_db = "GRCh38.111"
     Int snpeff_heap_mb = 8000
     String resolveome_align_container = "docker://ghcr.io/zvaksmanSJ/scdna-workflow-resolveome-align:latest"
   }

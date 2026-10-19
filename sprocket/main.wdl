@@ -106,7 +106,9 @@ workflow ResolveOmeDnaWorkflow {
     String vep_container = "docker://ensemblorg/ensembl-vep:release_111.0"   # free, stock, public
     File vep_cache_dir_tar         # tarball of the Ensembl VEP species cache, downloaded by ../setup/setup.sh
     Int vep_cache_version = 111
-    String snpeff_db = "GRCh38.105"   # snpEff database name, downloaded by ../setup/setup.sh's "snpEff DB" step
+    String snpeff_db = "GRCh38.111"   # snpEff database name -- MUST match ../setup/setup.sh's
+                                        # ENSEMBL_RELEASE (default 111), since setup.sh downloads
+                                        # "GRCh38.${ENSEMBL_RELEASE}"
 
     # ---- Per-cell QC gate (BaseJumper-derived composite score): tasks/cell_qc_gate.wdl ----
     # Runs right after Stage 1, before any downstream analysis. A cell that

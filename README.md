@@ -105,6 +105,12 @@ don't supply a private checkpoint, and `wdl/README.md`/`sprocket/README.md`
 document the preseq gap explicitly (you'd need to supply those binaries
 yourself to use them).
 
+> **If you override `ENSEMBL_RELEASE` away from its default (111) when
+> running `setup.sh`**, also update `inputs.json`'s `snpeff_db` to match
+> (`"GRCh38.<ENSEMBL_RELEASE>"`) -- `setup.sh` downloads the SnpEff database
+> name-matched to whatever `ENSEMBL_RELEASE` you give it, and `main.wdl`'s
+> `snpeff_db` input isn't derived from that automatically.
+
 ### 3. Quick start
 
 ```bash
