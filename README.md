@@ -40,3 +40,67 @@ this file is just a quick navigation map of the folder layout below.
 Both pipelines share `extra_methods/` for every phasing/LOH/lineage/QC/
 mutational-signature/dashboard calculation; neither one duplicates that
 logic.
+
+## Where are my results?
+
+Both pipelines produce a lot of per-cell, per-stage output; **the dashboard
+HTML is always the right place to start** -- everything below is a map for
+when you need a specific underlying file instead.
+
+### WDL pipeline (`main.wdl` or `sprocket/main.wdl`)
+
+Run `wdl/scripts/organize_outputs.py` against the engine's `outputs.json`
+(see `wdl/README.md`) to get this tree (works unchanged for Sprocket's
+output too):
+
+```
+<dest>/
+  dashboards/dashboard.html              <- OPEN THIS FIRST
+  cohort/
+    qc_gate/qc_gate_summary.tsv          <- every cell's PASS/Borderline/FAIL, one row each
+    lineage/                             <- final tree, NR/NV matrices, bootstrap support
+    qc/, phasing/, loh_ploidy/, mutational_signatures/   <- cohort-wide summary tables/figures
+  per_cell/<sample_id>/
+    qc_gate/<sample_id>.qc_gate_explanation.txt   <- WHY this specific cell passed/failed
+    variants/<sample_id>...vcf.gz          <- final DeepVariant+VEP+SnpEff calls (passed cells only)
+    cnv/, sv/                              <- CNVkit + Manta calls (passed cells only)
+    phasing/, loh_ploidy/                  <- Beagle phasing + Control-FREEC LOH/ploidy (passed cells only)
+    alignment/, qc/                        <- dedup BAM, flagstat/idxstats, fastp/fastqc/Picard/preseq (ALL cells)
+  logs/                                   <- safe to delete; not a result
+  run_scripts/                            <- inputs.json/outputs.json used; safe to delete once audited
+```
+
+**The most important handful of files, if you only look at a few:**
+
+| File | Why |
+|---|---|
+| `dashboards/dashboard.html` | The single-page overview: QC, phasing, LOH, lineage, mutational signatures, all in one tabbed report. |
+| `cohort/qc_gate/qc_gate_summary.tsv` | Every cell's PASS/Borderline/FAIL status and whether its downstream analysis ran, in one glance. |
+| `per_cell/<sample_id>/qc_gate/<sample_id>.qc_gate_explanation.txt` | For any specific FAILed (or Borderline) cell, exactly which of the 5 QC metrics tripped and by how much. |
+| `per_cell/<sample_id>/variants/<sample_id>...vcf.gz` | That cell's final annotated small-variant calls -- only exists for cells that passed the QC gate. |
+| `cohort/lineage/` | The final Sequoia lineage tree + its bootstrap-support verification report. |
+
+### Python/LSF production pipeline
+
+Run `extra_methods/organize_final_results.py` (symlink-based, non-
+destructive, safe to re-run) to get:
+
+```
+DNA_results/final/
+  dashboards/dashboard.html              <- OPEN THIS FIRST
+  components/<name>/                     <- one symlinked folder per stage
+                                             (variants_per_cell, cnv_cnvkit_per_cell,
+                                             sv_manta_per_cell, bam_per_cell, qc_raw/,
+                                             phasing_per_cell, loh_ploidy_per_cell,
+                                             lineage, mutational_signatures, ...)
+```
+
+Step2's own `passed_cells_only_manifest.tsv` / `failed_cells_manifest.tsv` /
+`cell_qc_metrics.tsv` (written directly under that run's Step2 output
+directory, not under `final/`) are the production pipeline's equivalent of
+the WDL gate's `qc_gate_summary.tsv` above -- see
+["Cell selection and interpretation of QC"](./README_RFC_DNA_Workflow.md#cell-selection-and-interpretation-of-qc)
+in the RFC for its hard-threshold gate (different formula from the WDL
+pipeline's BaseJumper-derived gate -- see `wdl/README.md`'s "Per-cell QC
+gate" section).
+

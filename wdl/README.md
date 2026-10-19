@@ -19,7 +19,9 @@ workflow_DNA/
   main.wdl                        -- top-level workflow (lives at workflow_DNA
                                       root, NOT inside wdl/ -- see note below)
   wdl/
-    tasks/*.wdl                    -- one file per pipeline stage (8 files)
+    tasks/*.wdl                    -- one file per pipeline stage (9 files,
+                                       including the per-cell QC gate --
+                                       see "Per-cell QC gate" below)
     scripts/make_region_chunks.py  -- DeepVariant region-chunking helper
     scripts/organize_outputs.py    -- post-run output reorganizer (see below)
     cromwell_local.conf            -- REQUIRED Cromwell config to actually
@@ -36,6 +38,60 @@ workflow_DNA/
 `wdl/` folder, not inside it), so the folder structure reads as: top-level
 entry point (`main.wdl`) + its supporting task library (`wdl/`) + its
 installer (`setup/`) + its runtime data (`wdl_runtime/`).
+
+
+## Per-cell QC gate (BaseJumper-derived composite score)
+
+Right after Stage 1 (`AlignTrimQC`), `main.wdl` runs a new `CellQcGate` task
+(`wdl/tasks/cell_qc_gate.wdl`) for every cell, **before** any of the
+expensive downstream stages (DeepVariant/VEP/SnpEff, Manta, Beagle phasing,
+Control-FREEC LOH/ploidy, Sequoia lineage). A cell that scores <=2/5 is
+marked **FAIL**, and every one of those downstream stages is skipped
+entirely for that cell -- not run, not silently stubbed out, actually
+absent from the scatter for that cell's index.
+
+This replaces the original `python_lsf_pipeline/step2` script's hard
+thresholds (1,000,000 reads / 0.70 mapping rate / 0.60 proper-pair rate)
+with the same composite-score formula BaseJumper's own `basej-dnaqc`
+pipeline uses, so this workflow's pass/fail decision matches BaseJumper's
+rather than inventing a third, different standard:
+
+| # | Metric | Cutoff | Source |
+|---|--------|--------|--------|
+| 1 | `preseq_count` (library complexity) | `> 3,500,000,000` | AlignTrimQC's preseq output |
+| 2 | `PCT_CHIMERAS` | `< 0.20` | AlignTrimQC's Picard `alignment_summary_metrics` |
+| 3 | chrM read fraction | `< 0.20` | AlignTrimQC's `idxstats` |
+| 4 | `MAPD_CNV_Log2` (CNV bin noise) | `< 0.25` | a lightweight CNVkit pass CellQcGate runs itself |
+| 5 | `SKEW_CNV` (CNV directional bias) | `< 0.25` | the same lightweight CNVkit pass |
+
+`CompositeScore` = how many of the 5 pass (0-5). `>=4` is **PASS**, `3` is
+**Borderline** (still runs every downstream stage, just flagged for
+review), `<=2` is **FAIL**. A cell with zero total reads is always FAIL
+regardless of score. See
+[`../extra_methods/cell_qc_gate.py`](../extra_methods/cell_qc_gate.py)'s own
+module docstring for:
+- the exact citation (BaseJumper's `basej-dnaqc` pipeline, vendored for
+  reference under `../resolveome_align/basej-public-pipelines/basej-dnaqc/`)
+- why `SKEW_CNV` here is an *adaptation* of BaseJumper's formula (same
+  metric definition and cutoff, but computed from CNVkit's `.cnr`/`.call.cns`
+  output instead of Ginkgo's, since this workflow uses CNVkit, not Ginkgo)
+- why the CNVkit pass this gate runs is a genuinely separate, lightweight
+  call from the full-depth CNV/SV stage later in the pipeline (mirrors
+  BaseJumper's own architecture: `basej-dnaqc` runs its own dedicated CNV
+  call purely for QC scoring, distinct from `basej-wgs`/`basej-somatic`'s
+  real CNV/SV calling)
+
+Every cell -- pass, Borderline, or FAIL -- gets a `qc_gate_explanation.txt`
+(workflow output `qc_gate_explanations`) listing each of the 5 metrics'
+actual value, its cutoff, and whether it passed, plus a final verdict line.
+For a FAILed cell this is the first place to look to understand why.
+Workflow outputs `qc_statuses` and `qc_passed_sample_ids` give the
+cohort-wide pass/fail list and the filtered sample ID list, respectively;
+cohort-wide outputs (small variants, phasing, LOH/ploidy, lineage) only
+ever contain PASSED cells, while alignment/QC-stage outputs (`dedup_bams`,
+`wgs_metrics`, `multiqc_report`, etc.) still cover every cell, pass or fail,
+since QC visibility into *why* a cell failed is the whole point of keeping
+those around.
 
 
 ## Validation performed this session

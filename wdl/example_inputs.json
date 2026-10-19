@@ -68,6 +68,7 @@
   "_comment_EXTRA_METHODS": "these already exist in extra_methods/ -- never produced by setup.sh, just referenced",
   "ResolveOmeDnaWorkflow.make_region_chunks_script": "wdl/scripts/make_region_chunks.py",
   "ResolveOmeDnaWorkflow.mapd_qc_script": "extra_methods/mapd_qc.py",
+  "ResolveOmeDnaWorkflow.cell_qc_gate_script": "extra_methods/cell_qc_gate.py",
   "ResolveOmeDnaWorkflow.fdr_estimate_script": "extra_methods/fdr_estimate.py",
   "ResolveOmeDnaWorkflow.artifact_panel_script": "extra_methods/artifact_panel.py",
   "ResolveOmeDnaWorkflow.phasing_summary_script": "extra_methods/phasing_summary.py",

@@ -95,6 +95,10 @@ sprocket/
   example_inputs.json       -- complete example inputs.json (see below)
   tasks/
     align_qc.wdl            -- container swap only
+    cell_qc_gate.wdl          -- NEW: container swap only (same logic as the
+                                 Cromwell version -- see wdl/README.md's
+                                 "Per-cell QC gate" section for the full
+                                 explanation; not repeated here)
     variant_calling.wdl      -- PlanChunks/MergeVcfChunks/SnpEffAnnotate: swap only.
                                  DeepVariantCall/VepAnnotateCall: dropped their
                                  unused trailing bcftools-index step (see above)
@@ -114,6 +118,15 @@ sprocket/
                                        dependencies pre-installed at build time
                                        (see that Dockerfile's own header comment)
 ```
+
+## Per-cell QC gate (BaseJumper-derived composite score)
+
+Same gate, same formula, same cutoffs as the Cromwell version -- see
+`../wdl/README.md`'s "Per-cell QC gate" section for the full explanation
+(metric list, cutoffs, PASS/Borderline/FAIL thresholds, and the
+`extra_methods/cell_qc_gate.py` citation). The only difference here is
+mechanical: `CellQcGate` runs inside the `resolveome-align` container
+instead of `conda activate`-ing it, same as every other task in this port.
 
 ## `sprocket.toml`
 

@@ -146,6 +146,11 @@ task AlignTrimQC {
       echo "[WARN] ~{sample_id}: preseq model fit failed" >&2
       printf 'status\treason\nNOT_COMPUTABLE\tpreseq model fit failed\n' > "qc/preseq/~{sample_id}/~{sample_id}.preseq.status.tsv"
     fi
+    # Normalize to one deterministic filename regardless of which branch above
+    # ran, so CellQcGate (tasks/cell_qc_gate.wdl) has a single path to read --
+    # it already handles both the plain-count and the NOT_COMPUTABLE formats.
+    cp "qc/preseq/~{sample_id}/~{sample_id}_preseq.txt" "qc/preseq/~{sample_id}/~{sample_id}.preseq_result.txt" 2>/dev/null \
+      || cp "qc/preseq/~{sample_id}/~{sample_id}.preseq.status.tsv" "qc/preseq/~{sample_id}/~{sample_id}.preseq_result.txt"
 
     rm -f "$name_bam" "$fixmate_bam" "$sorted_bam"
     rm -rf "$sort_tmp"
@@ -157,6 +162,10 @@ task AlignTrimQC {
     File flagstat = "bam/~{sample_id}.dedup.flagstat.txt"
     File idxstats = "bam/~{sample_id}.dedup.idxstats.txt"
     File wgs_metrics = "qc/picard/~{sample_id}.wgs_metrics"
+    # Named (not just globbed) outputs the per-cell QC gate (tasks/cell_qc_gate.wdl,
+    # called right after this task in main.wdl) reads directly.
+    File alignment_summary_metrics = "qc/picard/~{sample_id}.alignment_summary_metrics"
+    File preseq_result = "qc/preseq/~{sample_id}/~{sample_id}.preseq_result.txt"
     Array[File] fastp_out = glob("qc/fastp/*")
     Array[File] fastqc_raw_out = glob("qc/fastqc_raw/*")
     Array[File] fastqc_trimmed_out = glob("qc/fastqc_trimmed/*")

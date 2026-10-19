@@ -143,6 +143,15 @@ Ginkgo metrics. Its reference comparison score is informational and does not
 replace the explicit cell gate. A component that cannot be computed is marked
 `UNKNOWN` with a reason.
 
+**Note (WDL rewrite only):** the hard-threshold gate above describes the
+original Python/LSF pipeline. The WDL rewrite (`main.wdl`/`wdl/` and its
+Sprocket port) instead gates on a BaseJumper-derived composite score (5
+metrics, 0-5 scale, PASS/Borderline/FAIL) -- a deliberate, requested change
+from the simple-threshold approach above, matching BaseJumper's own
+`basej-dnaqc` pipeline rather than this project's historical gate. See "The
+general-purpose WDL rewrite" below and `wdl/README.md`'s "Per-cell QC gate"
+section for the full formula.
+
 ## Variant and copy-number analyses
 
 Per-cell small-variant calling uses the existing BioSkryb DeepVariant model,
@@ -306,6 +315,18 @@ just this one. Key design decisions:
   `inputs.json`; string defaults are limited to generic values (conda env
   names, a model filename, a ploidy range, `"male"`) that carry no
   site-specific assumption.
+- **Per-cell QC gate: BaseJumper-derived composite score, not the original
+  pipeline's hard thresholds.** Right after alignment, a new `CellQcGate`
+  task scores every cell on 5 metrics (library complexity, chimeric-read
+  rate, mitochondrial-read fraction, CNV bin noise, CNV directional bias),
+  each with BaseJumper's own published cutoff, and a FAILing cell (<=2/5)
+  has every downstream stage (DeepVariant/VEP/SnpEff, Manta, phasing,
+  LOH/ploidy, lineage) skipped entirely for that cell -- not just flagged.
+  See `wdl/README.md`'s "Per-cell QC gate" section and
+  `extra_methods/cell_qc_gate.py`'s own docstring for the full formula,
+  citation, and the one adaptation needed (CNVkit's bins instead of
+  Ginkgo's, for the CNV-based metrics -- this project uses CNVkit, not
+  Ginkgo, for its real CNV/SV analysis).
 
 ### A parallel Sprocket port
 
@@ -668,13 +689,21 @@ nested format) and lays every result out under:
 
 ```
 <dest>/
-  per_cell/<sample_id>/{alignment,qc,variants,cnv,sv,phasing,loh_ploidy}/
-  cohort/{qc,phasing,loh_ploidy,mutational_signatures,lineage}/
+  per_cell/<sample_id>/{alignment,qc,qc_gate,variants,cnv,sv,phasing,loh_ploidy}/
+  cohort/{qc,qc_gate,phasing,loh_ploidy,mutational_signatures,lineage}/
   dashboards/dashboard.html
   logs/                 <- logs only; safe to delete without losing results
   run_scripts/           <- inputs.json/outputs.json/extra scripts; safe to
                             delete once the run no longer needs to be audited
 ```
+
+`qc_gate` (both per-cell and cohort) holds the per-cell QC gate's own
+outputs -- see "The general-purpose WDL rewrite" above and
+`wdl/README.md`'s "Per-cell QC gate" section. `cohort/qc_gate/
+qc_gate_summary.tsv` is the fastest way to see every cell's PASS/
+Borderline/FAIL status and whether its downstream analysis ran, in one
+file; `per_cell/<sample_id>/qc_gate/<sample_id>.qc_gate_explanation.txt` is
+the per-cell breakdown of which of the 5 metrics passed/failed and why.
 
 ## Execution and failure handling
 

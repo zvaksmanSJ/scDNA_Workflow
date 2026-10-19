@@ -62,6 +62,11 @@ PER_CELL_OUTPUTS = {
     "freec_cnvs_candidate_ploidy": "loh_ploidy/candidate_ploidy",
     "freec_ratio_candidate_ploidy": "loh_ploidy/candidate_ploidy",
     "freec_info_candidate_ploidy": "loh_ploidy/candidate_ploidy",
+    # Per-cell QC gate (BaseJumper-derived composite score) -- ALL cells,
+    # pass or fail, same as every other "qc" subdir entry here; see
+    # qc_gate_explanation for why a specific cell failed.
+    "qc_gate_tsvs": "qc_gate",
+    "qc_gate_explanations": "qc_gate",
 }
 # Per-cell outputs that are themselves nested arrays (Array[Array[File]]):
 # one inner array of files per cell, flattened into that cell's QC folder.
@@ -203,6 +208,29 @@ def main() -> None:
             place(v, dest / subdir, link)
             placed += 1
 
+    # qc_statuses/qc_passed_sample_ids are Array[String] (not files), so they
+    # can't go through place() above -- write them out as one small cohort-
+    # wide summary TSV instead (sample_id, qc_status, and whether it's in the
+    # passed-cells list), the fastest way to see which cells failed and why
+    # without opening every per_cell/*/qc_gate/*_explanation.txt individually.
+    if "qc_statuses" in outputs:
+        qc_statuses = outputs["qc_statuses"]
+        if len(qc_statuses) != len(sample_ids):
+            print(f"[WARN] qc_statuses: {len(qc_statuses)} values but {len(sample_ids)} sample_ids -- skipping summary", file=sys.stderr)
+        else:
+            passed_ids = set(outputs.get("qc_passed_sample_ids", []))
+            summary_dir = dest / "cohort" / "qc_gate"
+            summary_dir.mkdir(parents=True, exist_ok=True)
+            summary_path = summary_dir / "qc_gate_summary.tsv"
+            with summary_path.open("w") as fh:
+                fh.write("sample_id\tqc_status\tdownstream_analysis_ran\n")
+                for sid, status in zip(sample_ids, qc_statuses):
+                    fh.write(f"{sid}\t{status}\t{str(sid in passed_ids).lower()}\n")
+            placed += 1
+            print(f"[DONE] wrote {summary_path}")
+    else:
+        missing_keys.append("qc_statuses")
+
     if missing_keys:
         print(f"[INFO] {len(missing_keys)} expected output key(s) not present in outputs.json "
               f"(fine if this was a partial/subset run): {', '.join(missing_keys)}", file=sys.stderr)
@@ -223,8 +251,8 @@ def main() -> None:
     readme.write_text(
         "# ResolveOME DNA workflow -- organized results\n\n"
         "- `per_cell/<sample_id>/` -- every per-cell result, grouped by pipeline stage\n"
-        "  (alignment, qc, variants, cnv, sv, phasing, loh_ploidy)\n"
-        "- `cohort/` -- cohort-wide aggregates (qc, phasing, loh_ploidy, mutational_signatures, lineage)\n"
+        "  (alignment, qc, qc_gate, variants, cnv, sv, phasing, loh_ploidy)\n"
+        "- `cohort/` -- cohort-wide aggregates (qc, qc_gate, phasing, loh_ploidy, mutational_signatures, lineage)\n"
         "- `dashboards/dashboard.html` -- the final tabbed dashboard; open this first\n"
         "- `logs/` -- **logs only**; safe to delete entirely without losing any result\n"
         "- `run_scripts/` -- the inputs.json/outputs.json (and any extra .sh files) used for this\n"

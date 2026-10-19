@@ -53,6 +53,7 @@
 version 1.2
 
 import "tasks/align_qc.wdl" as align_qc_t
+import "tasks/cell_qc_gate.wdl" as qc_gate_t
 import "tasks/variant_calling.wdl" as variants_t
 import "tasks/cnv_sv.wdl" as cnvsv_t
 import "tasks/qc_aggregate.wdl" as qc_t
@@ -106,6 +107,20 @@ workflow ResolveOmeDnaWorkflow {
     File vep_cache_dir_tar         # tarball of the Ensembl VEP species cache, downloaded by ../setup/setup.sh
     Int vep_cache_version = 111
     String snpeff_db = "GRCh38.105"   # snpEff database name, downloaded by ../setup/setup.sh's "snpEff DB" step
+
+    # ---- Per-cell QC gate (BaseJumper-derived composite score): tasks/cell_qc_gate.wdl ----
+    # Runs right after Stage 1, before any downstream analysis. A cell that
+    # scores <=2/5 (FAIL) has every downstream stage below (DeepVariant/VEP/
+    # SnpEff, Manta, phasing, LOH/ploidy, lineage) skipped entirely -- see
+    # extra_methods/cell_qc_gate.py's own docstring for the exact formula,
+    # ported from BaseJumper's basej-dnaqc. Cutoffs default to BaseJumper's
+    # own published values; override only if you have a specific reason to.
+    File cell_qc_gate_script
+    Float qc_gate_cutoff_preseq = 3500000000
+    Float qc_gate_cutoff_chimeras = 0.20
+    Float qc_gate_cutoff_chrm = 0.20
+    Float qc_gate_cutoff_mapd = 0.25
+    Float qc_gate_cutoff_skew = 0.25
 
     # ---- CNVkit / Manta: copy-number + structural-variant calling, tasks/cnv_sv.wdl ----
     File? cnv_reference_cnn       # optional pre-built CNVkit flat/pooled reference .cnn; omit to build one from this run's own BAMs
@@ -199,69 +214,16 @@ workflow ResolveOmeDnaWorkflow {
   }
 
   scatter (i in range(length(sample_ids))) {
-    scatter (chunk in plan_chunks.chunks) {
-      # chunk = [fai_name, canonical_chrom, start, end, region, chunk_id]
-      call variants_t.DeepVariantCall as dv_chunk {
-        input:
-          sample_id = sample_ids[i],
-          bam = align.dedup_bam[i],
-          bam_bai = align.dedup_bam_bai[i],
-          ref_fasta = ref_fasta,
-          ref_fasta_fai = ref_fasta_fai,
-          region = chunk[4],
-          chunk_id = chunk[5],
-          canonical_chrom = chunk[1],
-          deepvariant_model_dir_tar = deepvariant_model_dir_tar,
-          deepvariant_checkpoint_filename = deepvariant_checkpoint_filename,
-          population_vcfs_tar = deepvariant_population_vcfs_tar,
-          use_allele_frequency = dv_use_allele_frequency,
-          deepvariant_container = deepvariant_container,
-      }
-      call variants_t.VepAnnotateCall as vep_chunk {
-        input:
-          sample_id = sample_ids[i],
-          chunk_vcf = dv_chunk.chunk_vcf,
-          chunk_id = chunk[5],
-          vep_cache_dir_tar = vep_cache_dir_tar,
-          ref_fasta = ref_fasta,
-          vep_cache_version = vep_cache_version,
-          vep_container = vep_container,
-      }
-    }
-
-    call variants_t.MergeVcfChunks as merge_raw {
-      input:
-        sample_id = sample_ids[i],
-        chunk_vcfs = dv_chunk.chunk_vcf,
-        out_suffix = ".deepvariant.raw.vcf.gz",
-        resolveome_align_container = resolveome_align_container,
-    }
-    call variants_t.MergeVcfChunks as merge_vep {
-      input:
-        sample_id = sample_ids[i],
-        chunk_vcfs = vep_chunk.vep_chunk_vcf,
-        out_suffix = ".deepvariant.raw.vep.vcf.gz",
-        require_vep_ann = true,
-        resolveome_align_container = resolveome_align_container,
-    }
-    call variants_t.SnpEffAnnotate as snpeff {
-      input:
-        sample_id = sample_ids[i],
-        merged_vep_vcf = merge_vep.merged_vcf,
-        snpeff_db = snpeff_db,
-        resolveome_align_container = resolveome_align_container,
-    }
-
     # ===========================================================================
-    # STAGE 3 -- CNV (CNVkit) + SV (Manta) calling, per cell
-    # ---------------------------------------------------------------------------
-    # MantaCall's own `.tbi` output is `File?` -- if it's missing (Manta
-    # didn't produce one, a real possibility the Cromwell version also
-    # guarded against), fall back to the shared IndexVcf helper task. This
-    # `if` block is how Sprocket's one-container-per-task model reproduces
-    # the Cromwell version's "apptainer exec Manta, then conda-activate
-    # bcftools as a fallback" pattern without ever running two toolsets in
-    # one task.
+    # STAGE 3 (CNVkit half only) -- run BEFORE the QC gate below, deliberately.
+    # CnvkitCall only needs Stage 1's dedup_bam, so it's moved up from its
+    # original position (right alongside MantaCall, further down) to double as
+    # the gate's own MAPD/SKEW source -- this mirrors BaseJumper's own
+    # architecture, where `basej-dnaqc` runs its own dedicated CNV call purely
+    # for QC scoring, separate from whatever deeper CNV/SV pipeline runs
+    # afterwards. This also means CNVkit runs exactly ONCE per cell (not
+    # duplicated for gating vs. the real analysis) -- the gate's own
+    # `CellQcGate` task (next, below) reads THIS call's .cnr/.call_cns.
     # ===========================================================================
     call cnvsv_t.CnvkitCall as cnvkit {
       input:
@@ -273,22 +235,133 @@ workflow ResolveOmeDnaWorkflow {
         cnv_reference_cnn = cnv_reference_cnn,
         resolveome_align_container = resolveome_align_container,
     }
-    call cnvsv_t.MantaCall as manta {
+
+    # ===========================================================================
+    # QC GATE -- BaseJumper-derived composite score (tasks/cell_qc_gate.wdl).
+    # Runs unconditionally (it IS the gate), using Stage 1's Picard/idxstats/
+    # preseq outputs plus the CnvkitCall just above. Every stage below this
+    # point in the SAME scatter iteration -- and Stage 4/5 further down --
+    # is wrapped in `if (gate.qc_pass)` and is SKIPPED for a FAILing cell. See
+    # ../extra_methods/cell_qc_gate.py's docstring for the exact formula and
+    # gate.qc_gate_explanation for a human-readable per-cell breakdown of
+    # which metric(s) failed and why.
+    # ===========================================================================
+    call qc_gate_t.CellQcGate as gate {
       input:
         sample_id = sample_ids[i],
         bam = align.dedup_bam[i],
         bam_bai = align.dedup_bam_bai[i],
         ref_fasta = ref_fasta,
         ref_fasta_fai = ref_fasta_fai,
-        manta_container = manta_container,
+        cnv_reference_cnn = cnv_reference_cnn,
+        idxstats = align.idxstats[i],
+        alignment_summary_metrics = align.alignment_summary_metrics[i],
+        preseq_result = align.preseq_result[i],
+        cell_qc_gate_script = cell_qc_gate_script,
+        cutoff_preseq = qc_gate_cutoff_preseq,
+        cutoff_chimeras = qc_gate_cutoff_chimeras,
+        cutoff_chrm = qc_gate_cutoff_chrm,
+        cutoff_mapd = qc_gate_cutoff_mapd,
+        cutoff_skew = qc_gate_cutoff_skew,
+        resolveome_align_container = resolveome_align_container,
     }
-    if (!defined(manta.manta_vcf_tbi)) {
-      call common_t.IndexVcf as manta_reindex {
+
+    if (gate.qc_pass) {
+      # STAGE 2 -- Small variants: DeepVariant (chunked) + VEP + SnpEff
+      # annotation. plan_chunks.chunks (computed ONCE above, outside this
+      # scatter) is reused by every PASSING cell.
+      scatter (chunk in plan_chunks.chunks) {
+        # chunk = [fai_name, canonical_chrom, start, end, region, chunk_id]
+        call variants_t.DeepVariantCall as dv_chunk {
+          input:
+            sample_id = sample_ids[i],
+            bam = align.dedup_bam[i],
+            bam_bai = align.dedup_bam_bai[i],
+            ref_fasta = ref_fasta,
+            ref_fasta_fai = ref_fasta_fai,
+            region = chunk[4],
+            chunk_id = chunk[5],
+            canonical_chrom = chunk[1],
+            deepvariant_model_dir_tar = deepvariant_model_dir_tar,
+            deepvariant_checkpoint_filename = deepvariant_checkpoint_filename,
+            population_vcfs_tar = deepvariant_population_vcfs_tar,
+            use_allele_frequency = dv_use_allele_frequency,
+            deepvariant_container = deepvariant_container,
+        }
+        call variants_t.VepAnnotateCall as vep_chunk {
+          input:
+            sample_id = sample_ids[i],
+            chunk_vcf = dv_chunk.chunk_vcf,
+            chunk_id = chunk[5],
+            vep_cache_dir_tar = vep_cache_dir_tar,
+            ref_fasta = ref_fasta,
+            vep_cache_version = vep_cache_version,
+            vep_container = vep_container,
+        }
+      }
+
+      call variants_t.MergeVcfChunks as merge_raw {
         input:
-          vcf = manta.manta_vcf,
-          out_name = "~{sample_ids[i]}.manta.vcf.gz",
+          sample_id = sample_ids[i],
+          chunk_vcfs = dv_chunk.chunk_vcf,
+          out_suffix = ".deepvariant.raw.vcf.gz",
           resolveome_align_container = resolveome_align_container,
       }
+      call variants_t.MergeVcfChunks as merge_vep {
+        input:
+          sample_id = sample_ids[i],
+          chunk_vcfs = vep_chunk.vep_chunk_vcf,
+          out_suffix = ".deepvariant.raw.vep.vcf.gz",
+          require_vep_ann = true,
+          resolveome_align_container = resolveome_align_container,
+      }
+      call variants_t.SnpEffAnnotate as snpeff {
+        input:
+          sample_id = sample_ids[i],
+          merged_vep_vcf = merge_vep.merged_vcf,
+          snpeff_db = snpeff_db,
+          resolveome_align_container = resolveome_align_container,
+      }
+
+      # ===========================================================================
+      # STAGE 3 (Manta half) -- SV calling, per cell, reading the SAME dedup_bam
+      # as CnvkitCall above (CnvkitCall itself already ran, unconditionally,
+      # before the gate -- see the comment at the top of this scatter body).
+      # ---------------------------------------------------------------------------
+      # MantaCall's own `.tbi` output is `File?` -- if it's missing (Manta
+      # didn't produce one, a real possibility the Cromwell version also
+      # guarded against), fall back to the shared IndexVcf helper task. This
+      # `if` block is how Sprocket's one-container-per-task model reproduces
+      # the Cromwell version's "apptainer exec Manta, then conda-activate
+      # bcftools as a fallback" pattern without ever running two toolsets in
+      # one task.
+      # ===========================================================================
+      call cnvsv_t.MantaCall as manta {
+        input:
+          sample_id = sample_ids[i],
+          bam = align.dedup_bam[i],
+          bam_bai = align.dedup_bam_bai[i],
+          ref_fasta = ref_fasta,
+          ref_fasta_fai = ref_fasta_fai,
+          manta_container = manta_container,
+      }
+      if (!defined(manta.manta_vcf_tbi)) {
+        call common_t.IndexVcf as manta_reindex {
+          input:
+            vcf = manta.manta_vcf,
+            out_name = "~{sample_ids[i]}.manta.vcf.gz",
+            resolveome_align_container = resolveome_align_container,
+        }
+      }
+
+      # Pass-throughs of already-unconditional Stage 1 values, gated by the
+      # SAME `if (gate.qc_pass)` condition as everything else in this block --
+      # cohort-wide tasks further down (Stage 7) `select_all()` these
+      # alongside snpeff/manta's own (already-optional-by-construction)
+      # outputs to build a consistent "passing cells only" view, in the same
+      # relative order, without a separate manual filter step.
+      String sample_id_passed = sample_ids[i]
+      File wgs_metrics_passed = align.wgs_metrics[i]
     }
   }
 
@@ -299,25 +372,30 @@ workflow ResolveOmeDnaWorkflow {
                               "13","14","15","16","17","18","19","20","21","22"]
 
   scatter (i in range(length(sample_ids))) {
-    scatter (chrom in autosomes) {
-      call phasing_t.PhaseChromosome as phase_chrom {
+    # Skip phasing entirely for a FAILing cell (same gate as Stage 2/3 above) --
+    # merge_raw.merged_vcf[i]/merged_vcf_csi[i] are themselves optional (only
+    # produced when gate.qc_pass was true for this same cell).
+    if (gate.qc_pass[i]) {
+      scatter (chrom in autosomes) {
+        call phasing_t.PhaseChromosome as phase_chrom {
+          input:
+            sample_id = sample_ids[i],
+            raw_vcf = select_first([merge_raw.merged_vcf[i]]),
+            raw_vcf_csi = select_first([merge_raw.merged_vcf_csi[i]]),
+            chrom = chrom,
+            ref_panel_vcf = phasing_ref_panel_by_chrom[chrom],
+            ref_panel_vcf_tbi = phasing_ref_panel_tbi_by_chrom[chrom],
+            genetic_map = genetic_map_by_chrom[chrom],
+            beagle_jar = beagle_jar,
+            resolveome_align_container = resolveome_align_container,
+        }
+      }
+      call phasing_t.ConcatPhasedChromosomes as concat_phased {
         input:
           sample_id = sample_ids[i],
-          raw_vcf = merge_raw.merged_vcf[i],
-          raw_vcf_csi = merge_raw.merged_vcf_csi[i],
-          chrom = chrom,
-          ref_panel_vcf = phasing_ref_panel_by_chrom[chrom],
-          ref_panel_vcf_tbi = phasing_ref_panel_tbi_by_chrom[chrom],
-          genetic_map = genetic_map_by_chrom[chrom],
-          beagle_jar = beagle_jar,
+          phased_chrom_vcfs = phase_chrom.phased_chrom_vcf,
           resolveome_align_container = resolveome_align_container,
       }
-    }
-    call phasing_t.ConcatPhasedChromosomes as concat_phased {
-      input:
-        sample_id = sample_ids[i],
-        phased_chrom_vcfs = phase_chrom.phased_chrom_vcf,
-        resolveome_align_container = resolveome_align_container,
     }
   }
 
@@ -325,31 +403,35 @@ workflow ResolveOmeDnaWorkflow {
   # STAGE 5 -- LOH + ploidy: Control-FREEC, per cell, run TWICE
   # ===========================================================================
   scatter (i in range(length(sample_ids))) {
-    call loh_t.ControlFreec as freec_fixed {
-      input:
-        sample_id = sample_ids[i],
-        bam = align.dedup_bam[i],
-        bam_bai = align.dedup_bam_bai[i],
-        ref_fasta = ref_fasta,
-        chrom_fasta_dir_tar = chrom_fasta_dir_tar,
-        chr_len_file = chrom_len_file,
-        snp_positions_vcf = snp_positions_vcf,
-        snp_positions_vcf_tbi = snp_positions_vcf_tbi,
-        ploidy = freec_fixed_ploidy,
-        freec_container = freec_container,
-    }
-    call loh_t.ControlFreec as freec_ploidy {
-      input:
-        sample_id = sample_ids[i],
-        bam = align.dedup_bam[i],
-        bam_bai = align.dedup_bam_bai[i],
-        ref_fasta = ref_fasta,
-        chrom_fasta_dir_tar = chrom_fasta_dir_tar,
-        chr_len_file = chrom_len_file,
-        snp_positions_vcf = snp_positions_vcf,
-        snp_positions_vcf_tbi = snp_positions_vcf_tbi,
-        ploidy = freec_candidate_ploidies,
-        freec_container = freec_container,
+    # Stage 5 reads align.dedup_bam directly (not a gated Stage 2/3 output),
+    # so it needs its own explicit qc_pass gate.
+    if (gate.qc_pass[i]) {
+      call loh_t.ControlFreec as freec_fixed {
+        input:
+          sample_id = sample_ids[i],
+          bam = align.dedup_bam[i],
+          bam_bai = align.dedup_bam_bai[i],
+          ref_fasta = ref_fasta,
+          chrom_fasta_dir_tar = chrom_fasta_dir_tar,
+          chr_len_file = chrom_len_file,
+          snp_positions_vcf = snp_positions_vcf,
+          snp_positions_vcf_tbi = snp_positions_vcf_tbi,
+          ploidy = freec_fixed_ploidy,
+          freec_container = freec_container,
+      }
+      call loh_t.ControlFreec as freec_ploidy {
+        input:
+          sample_id = sample_ids[i],
+          bam = align.dedup_bam[i],
+          bam_bai = align.dedup_bam_bai[i],
+          ref_fasta = ref_fasta,
+          chrom_fasta_dir_tar = chrom_fasta_dir_tar,
+          chr_len_file = chrom_len_file,
+          snp_positions_vcf = snp_positions_vcf,
+          snp_positions_vcf_tbi = snp_positions_vcf_tbi,
+          ploidy = freec_candidate_ploidies,
+          freec_container = freec_container,
+      }
     }
   }
 
@@ -360,33 +442,42 @@ workflow ResolveOmeDnaWorkflow {
     input:
       input_files = flatten([flatten(align.fastp_out), flatten(align.fastqc_raw_out),
                               flatten(align.fastqc_trimmed_out), flatten(align.picard_out),
-                              snpeff.snpeff_html, snpeff.snpeff_genes_csv]),
+                              select_all(snpeff.snpeff_html), select_all(snpeff.snpeff_genes_csv)]),
       resolveome_align_container = resolveome_align_container,
   }
 
   # ===========================================================================
   # STAGE 7 -- Cohort-wide extra_methods calculations + the final dashboard
+  # ---------------------------------------------------------------------------
+  # `passed_sample_ids` is the gate-filtered sample_ids list (see Stage 2/3's
+  # `if (gate.qc_pass)` block above for the `sample_id_passed`/
+  # `wgs_metrics_passed` pass-throughs it's built from) -- every select_all()'d
+  # array below stays index-aligned with it, since all of them were produced
+  # by scatters gated on that SAME per-cell condition.
   # ===========================================================================
+  Array[String] passed_sample_ids = select_all(sample_id_passed)
+
   call extra_t.MapdQc as mapd {
     input: cnr_files = cnvkit.cnr, sample_ids = sample_ids,
            mapd_qc_script = mapd_qc_script, resolveome_align_container = resolveome_align_container,
   }
   call extra_t.FdrEstimate as fdr {
-    input: final_annotated_vcfs = snpeff.final_annotated_vcf,
-           wgs_metrics_files = align.wgs_metrics,
-           sample_ids = sample_ids, fdr_estimate_script = fdr_estimate_script,
+    input: final_annotated_vcfs = select_all(snpeff.final_annotated_vcf),
+           wgs_metrics_files = select_all(wgs_metrics_passed),
+           sample_ids = passed_sample_ids, fdr_estimate_script = fdr_estimate_script,
            resolveome_align_container = resolveome_align_container,
   }
   call extra_t.ArtifactPanel as artifact {
-    input: final_annotated_vcfs = snpeff.final_annotated_vcf, sample_ids = sample_ids,
+    input: final_annotated_vcfs = select_all(snpeff.final_annotated_vcf), sample_ids = passed_sample_ids,
            artifact_panel_script = artifact_panel_script, resolveome_align_container = resolveome_align_container,
   }
   call extra_t.PhasingSummary as phasing_summary {
-    input: phased_vcfs = concat_phased.phased_vcf, sample_ids = sample_ids,
+    input: phased_vcfs = select_all(concat_phased.phased_vcf), sample_ids = passed_sample_ids,
            phasing_summary_script = phasing_summary_script, resolveome_align_container = resolveome_align_container,
   }
   call extra_t.LohAndPloidySummary as loh_summary {
-    input: cnvs_files = freec_ploidy.cnvs, info_files = freec_ploidy.info, sample_ids = sample_ids,
+    input: cnvs_files = select_all(freec_ploidy.cnvs), info_files = select_all(freec_ploidy.info),
+           sample_ids = passed_sample_ids,
            loh_summary_script = loh_summary_script, ploidy_summary_script = ploidy_summary_script,
            loh_by_region_script = loh_by_region_script, chrom_len_file = chrom_len_file,
            resolveome_align_container = resolveome_align_container,
@@ -400,14 +491,14 @@ workflow ResolveOmeDnaWorkflow {
            mutational_signatures_r_script = mutational_signatures_r_script, mutsig_container = mutsig_container,
   }
   call lineage_t.BuildLineageTree as lineage {
-    input: final_annotated_vcfs = snpeff.final_annotated_vcf, sample_ids = sample_ids,
+    input: final_annotated_vcfs = select_all(snpeff.final_annotated_vcf), sample_ids = passed_sample_ids,
            lineage_track_script = lineage_track_script,
            sequoia_build_phylogeny_script = sequoia_build_phylogeny_script,
            mpboot_binary = mpboot_binary, donor_id = donor_id, gender = gender,
            mpboot_bootstrap = mpboot_bootstrap, lineage_container = lineage_container,
   }
   call lineage_t.VerifyLineage as lineage_verify {
-    input: final_annotated_vcfs = snpeff.final_annotated_vcf, sample_ids = sample_ids,
+    input: final_annotated_vcfs = select_all(snpeff.final_annotated_vcf), sample_ids = passed_sample_ids,
            lineage_track_script = lineage_track_script, verify_lineage_script = verify_lineage_script,
            verify_lineage_r_script = verify_lineage_r_script,
            sequoia_build_phylogeny_script = sequoia_build_phylogeny_script,
@@ -460,32 +551,42 @@ workflow ResolveOmeDnaWorkflow {
     Array[Array[File]] fastqc_trimmed_out = align.fastqc_trimmed_out
     Array[Array[File]] picard_out = align.picard_out
 
-    # ---- per-cell: small variants ----
-    Array[File] deepvariant_vep_snpeff_vcfs = snpeff.final_annotated_vcf
-    Array[File] deepvariant_vep_snpeff_vcf_csis = snpeff.final_annotated_vcf_csi
-    Array[File] snpeff_htmls = snpeff.snpeff_html
-    Array[File] snpeff_genes_csvs = snpeff.snpeff_genes_csv
+    # ---- per-cell: small variants -- PASSED CELLS ONLY (snpeff is skipped
+    # for a FAILing cell; see qc_passed_sample_ids below for which these are) ----
+    Array[File] deepvariant_vep_snpeff_vcfs = select_all(snpeff.final_annotated_vcf)
+    Array[File] deepvariant_vep_snpeff_vcf_csis = select_all(snpeff.final_annotated_vcf_csi)
+    Array[File] snpeff_htmls = select_all(snpeff.snpeff_html)
+    Array[File] snpeff_genes_csvs = select_all(snpeff.snpeff_genes_csv)
 
     # ---- per-cell: CNV / SV ----
     Array[File] cnvkit_cns = cnvkit.cns
     Array[File] cnvkit_cnr = cnvkit.cnr
     Array[File] cnvkit_call_cns = cnvkit.call_cns
     Array[File] cnvkit_genemetrics = cnvkit.genemetrics
-    Array[File] manta_vcfs = manta.manta_vcf
+    Array[File] manta_vcfs = select_all(manta.manta_vcf)
     # Manta's own .tbi where it produced one, else the IndexVcf fallback's .csi
     Array[File] manta_vcf_indexes = select_all(flatten([manta.manta_vcf_tbi, manta_reindex.vcf_csi]))
 
-    # ---- per-cell: phasing (Beagle; autosomes only, see phasing.wdl) ----
-    Array[File] phased_vcfs = concat_phased.phased_vcf
-    Array[File] phased_vcf_csis = concat_phased.phased_vcf_csi
+    # ---- per-cell: QC gate (BaseJumper-derived composite score; ALL cells,
+    # pass or fail -- see gate.qc_gate_explanation for why a specific cell
+    # failed, and ../extra_methods/cell_qc_gate.py's docstring for the formula) ----
+    Array[String] qc_statuses = gate.qc_status
+    Array[File] qc_gate_tsvs = gate.qc_gate_tsv
+    Array[File] qc_gate_explanations = gate.qc_gate_explanation
+    Array[String] qc_passed_sample_ids = passed_sample_ids
 
-    # ---- per-cell: LOH / ploidy (Control-FREEC) ----
-    Array[File] freec_cnvs_fixed_ploidy = freec_fixed.cnvs
-    Array[File] freec_ratio_fixed_ploidy = freec_fixed.ratio
-    Array[File] freec_info_fixed_ploidy = freec_fixed.info
-    Array[File] freec_cnvs_candidate_ploidy = freec_ploidy.cnvs
-    Array[File] freec_ratio_candidate_ploidy = freec_ploidy.ratio
-    Array[File] freec_info_candidate_ploidy = freec_ploidy.info
+    # ---- per-cell: phasing (Beagle; autosomes only, see phasing.wdl) --
+    # PASSED CELLS ONLY (see qc_passed_sample_ids above for which these are) ----
+    Array[File] phased_vcfs = select_all(concat_phased.phased_vcf)
+    Array[File] phased_vcf_csis = select_all(concat_phased.phased_vcf_csi)
+
+    # ---- per-cell: LOH / ploidy (Control-FREEC) -- PASSED CELLS ONLY ----
+    Array[File] freec_cnvs_fixed_ploidy = select_all(freec_fixed.cnvs)
+    Array[File] freec_ratio_fixed_ploidy = select_all(freec_fixed.ratio)
+    Array[File] freec_info_fixed_ploidy = select_all(freec_fixed.info)
+    Array[File] freec_cnvs_candidate_ploidy = select_all(freec_ploidy.cnvs)
+    Array[File] freec_ratio_candidate_ploidy = select_all(freec_ploidy.ratio)
+    Array[File] freec_info_candidate_ploidy = select_all(freec_ploidy.info)
 
     # ---- cohort: aggregated QC ----
     File multiqc_report = multiqc.report_html
