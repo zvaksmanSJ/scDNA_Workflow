@@ -1,0 +1,16 @@
+# Reference/runtime data and build artifacts -- never belongs in this repo
+__pycache__/
+*.pyc
+*.pyo
+*.sif
+*.jar
+*.fa
+*.fasta
+*.fai
+*.bam
+*.bai
+*.vcf.gz
+*.vcf.gz.tbi
+*.vcf.gz.csi
+*.cram
+.DS_Store

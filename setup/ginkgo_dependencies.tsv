@@ -1,0 +1,18 @@
+component	conda_package	requirement	source
+Python	python	>=3.11	stdlib orchestration
+samtools	samtools	1.20 (current environment probe)	BAM header/quickcheck
+bedtools	bedtools	2.31.1	bamtobed
+R	r-base	4.4.0 (latest current environment probe; source container uses 3.6.3)	Ginkgo R scripts
+ctc	bioconductor-ctc	1.80.0 installed via BiocManager (Bioc 3.20) into resolveome-align/lib/R/library	cnv_ginkgo.R
+DNAcopy	bioconductor-dnacopy	1.80.0 (latest current environment probe)	cnv_ginkgo.R
+inline	r-inline	0.3.21 installed via CRAN into resolveome-align/lib/R/library	cnv_ginkgo.R
+gplots	r-gplots	3.3.0 installed via CRAN into resolveome-align/lib/R/library	cnv_ginkgo.R
+scales	r-scales	1.4.0 installed via CRAN into resolveome-align/lib/R/library	cnv_ginkgo.R
+plyr	r-plyr	1.8.9 installed via CRAN into resolveome-align/lib/R/library	cnv_ginkgo.R
+ggplot2	r-ggplot2	4.0.3 installed via CRAN into resolveome-align/lib/R/library	cnv_ginkgo.R
+gridExtra	r-gridextra	2.3.1 installed via CRAN into resolveome-align/lib/R/library	cnv_ginkgo.R
+dplyr	r-dplyr	1.2.1 installed via CRAN into resolveome-align/lib/R/library	rscript_parse_rds_cnv_metrics.R and rds_to_flat.R
+magrittr	r-magrittr	2.0.5 installed via CRAN into resolveome-align/lib/R/library	rscript_parse_rds_cnv_metrics.R and rds_to_flat.R
+optparse	r-optparse	1.8.2 installed via CRAN into resolveome-align/lib/R/library	cnvSummarizer.R original QC metrics
+binUnsorted	local source executable	ELF x86_64 supplied by BioSkryb	reused in place, not copied
+LSF	bsub	10.1 (site install)	cohort submission only

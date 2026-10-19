@@ -1,0 +1,589 @@
+digraph ResolveOME_DNA_Workflow {
+  rankdir=TB;
+  compound=true;
+  splines=ortho;
+  nodesep=0.55;
+  ranksep=0.75;
+  pad=0.4;
+  bgcolor="white";
+  fontname="Helvetica-Bold";
+  fontsize=28;
+  labelloc="t";
+  fontcolor="#1a1a1a";
+  label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="28">ResolveOME Single-Cell DNA Workflow</FONT>>;
+  dpi=200;
+  outputorder=edgesfirst;
+  node [fontname="Helvetica"];
+  edge [fontname="Helvetica", fontsize=9, color="#7a7a7a", penwidth=1.2, arrowsize=0.8];
+
+  input_fastq [shape=oval, style="filled", fillcolor="#c9deef", color="#6f9bc7", fontname="Helvetica", fontsize=11, fontcolor="#1f3a5f", label="Per-cell paired FASTQs\n(R1 / R2, merged)"];
+
+
+  subgraph cluster_percell {
+    style="dashed,rounded";
+    color="#2e6da4";
+    penwidth=2.2;
+    bgcolor="#f3f8fd";
+    fontname="Helvetica-Bold";
+    fontsize=16;
+    fontcolor="#1f4e79";
+    labelloc="t";
+    margin=28;
+    label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="16" COLOR="#1f4e79">SCATTERED ACROSS ALL CELLS (PARALLEL) &mdash; STAGES 1&ndash;5</FONT>>;
+
+    scatter [shape=diamond, style=filled, fillcolor="#ffe49c", color="#a17304", fontname="Helvetica-Bold", fontsize=11, label="Scatter over\ncells (1..N)"];
+
+    subgraph cluster_cell1 {
+      style="dashed,rounded"; color="#8aa9cc"; bgcolor="#ffffff"; penwidth=1.3;
+      fontname="Helvetica-Bold"; fontsize=12; fontcolor="#3c6494"; margin=16;
+      label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="12" COLOR="#3c6494">Cell 1 lane</FONT>>;
+
+  fastp_1 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">fastp</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">adapter / quality trim</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  fastqc_1 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">FastQC</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">raw + trimmed QC</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  bwa_1 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">bwa-mem2</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">alignment</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  samtools_1 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">samtools</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">sort / fixmate / dedup</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  picard_1 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Picard</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">CollectMultipleMetrics +<BR/>CollectWgsMetrics</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  preseq_1 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">preseq</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">library complexity</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  dedupbam_1 [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Dedup BAM\n(cell 1)"];
+
+
+  vcannot_1 [shape=none, margin=0, width=2.6, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#f1ecf7" COLOR="#4a3366">
+      <TR><TD BGCOLOR="#6a4c93" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Variant Calling &amp; Annotation</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">DeepVariant + VEP + SnpEff,<BR/>chunked by region</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  rawvcf_1 [shape=oval, style="filled,dashed", fillcolor="#e4edf7", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Raw VCF\n(cell 1)"];
+
+  annotvcf_1 [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Annotated VCF\n(cell 1)"];
+
+
+  cnvkit_1 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+      <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">CNVkit</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">CNV calling</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  manta_1 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+      <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Manta</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">SV calling</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  cnv_out_1 [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="CNV calls\n(cell 1)"];
+
+  sv_out_1 [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="SV calls\n(cell 1)"];
+
+
+  beagle_1 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fbeaf2" COLOR="#8c3258">
+      <TR><TD BGCOLOR="#c2487d" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Beagle 5.5</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">phasing, autosomes only</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  phasedvcf_1 [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Phased VCF\n(cell 1)"];
+
+
+  freec_1 [shape=none, margin=0, width=2.4, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fdf2e6" COLOR="#a1652a">
+      <TR><TD BGCOLOR="#d98c3d" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Control-FREEC</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">LOH + ploidy (x2):<BR/>fixed ploidy=2 &amp;<BR/>candidate-ploidy</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  freec_out_1 [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="LOH / ploidy calls\n(cell 1)"];
+
+
+      fastp_1 -> fastqc_1 -> bwa_1 -> samtools_1 -> picard_1 -> preseq_1 -> dedupbam_1;
+      dedupbam_1 -> vcannot_1;
+      vcannot_1 -> rawvcf_1 [style=invis];
+      rawvcf_1 -> annotvcf_1 [xlabel="SnpEff/VEP annotation", fontsize=8];
+      dedupbam_1 -> cnvkit_1 -> cnv_out_1;
+      dedupbam_1 -> manta_1 -> sv_out_1;
+      rawvcf_1 -> beagle_1 -> phasedvcf_1;
+      dedupbam_1 -> freec_1 -> freec_out_1;
+    }
+
+    subgraph cluster_cell2 {
+      style="dashed,rounded"; color="#8aa9cc"; bgcolor="#ffffff"; penwidth=1.3;
+      fontname="Helvetica-Bold"; fontsize=12; fontcolor="#3c6494"; margin=16;
+      label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="12" COLOR="#3c6494">Cell 2 lane</FONT>>;
+
+  fastp_2 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">fastp</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">adapter / quality trim</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  fastqc_2 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">FastQC</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">raw + trimmed QC</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  bwa_2 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">bwa-mem2</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">alignment</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  samtools_2 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">samtools</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">sort / fixmate / dedup</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  picard_2 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Picard</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">CollectMultipleMetrics +<BR/>CollectWgsMetrics</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  preseq_2 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">preseq</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">library complexity</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  dedupbam_2 [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Dedup BAM\n(cell 2)"];
+
+
+  vcannot_2 [shape=none, margin=0, width=2.6, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#f1ecf7" COLOR="#4a3366">
+      <TR><TD BGCOLOR="#6a4c93" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Variant Calling &amp; Annotation</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">DeepVariant + VEP + SnpEff,<BR/>chunked by region</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  rawvcf_2 [shape=oval, style="filled,dashed", fillcolor="#e4edf7", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Raw VCF\n(cell 2)"];
+
+  annotvcf_2 [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Annotated VCF\n(cell 2)"];
+
+
+  cnvkit_2 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+      <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">CNVkit</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">CNV calling</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  manta_2 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+      <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Manta</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">SV calling</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  cnv_out_2 [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="CNV calls\n(cell 2)"];
+
+  sv_out_2 [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="SV calls\n(cell 2)"];
+
+
+  beagle_2 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fbeaf2" COLOR="#8c3258">
+      <TR><TD BGCOLOR="#c2487d" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Beagle 5.5</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">phasing, autosomes only</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  phasedvcf_2 [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Phased VCF\n(cell 2)"];
+
+
+  freec_2 [shape=none, margin=0, width=2.4, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fdf2e6" COLOR="#a1652a">
+      <TR><TD BGCOLOR="#d98c3d" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Control-FREEC</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">LOH + ploidy (x2):<BR/>fixed ploidy=2 &amp;<BR/>candidate-ploidy</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  freec_out_2 [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="LOH / ploidy calls\n(cell 2)"];
+
+
+      fastp_2 -> fastqc_2 -> bwa_2 -> samtools_2 -> picard_2 -> preseq_2 -> dedupbam_2;
+      dedupbam_2 -> vcannot_2;
+      vcannot_2 -> rawvcf_2 [style=invis];
+      rawvcf_2 -> annotvcf_2 [xlabel="SnpEff/VEP annotation", fontsize=8];
+      dedupbam_2 -> cnvkit_2 -> cnv_out_2;
+      dedupbam_2 -> manta_2 -> sv_out_2;
+      rawvcf_2 -> beagle_2 -> phasedvcf_2;
+      dedupbam_2 -> freec_2 -> freec_out_2;
+    }
+
+    subgraph cluster_cellN {
+      style="dashed,rounded"; color="#8aa9cc"; bgcolor="#ffffff"; penwidth=1.3;
+      fontname="Helvetica-Bold"; fontsize=12; fontcolor="#3c6494"; margin=16;
+      label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="12" COLOR="#3c6494">Cell N lane</FONT>>;
+
+  fastp_N [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">fastp</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">adapter / quality trim</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  fastqc_N [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">FastQC</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">raw + trimmed QC</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  bwa_N [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">bwa-mem2</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">alignment</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  samtools_N [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">samtools</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">sort / fixmate / dedup</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  picard_N [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Picard</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">CollectMultipleMetrics +<BR/>CollectWgsMetrics</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  preseq_N [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">preseq</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">library complexity</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  dedupbam_N [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Dedup BAM\n(cell N)"];
+
+
+  vcannot_N [shape=none, margin=0, width=2.6, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#f1ecf7" COLOR="#4a3366">
+      <TR><TD BGCOLOR="#6a4c93" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Variant Calling &amp; Annotation</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">DeepVariant + VEP + SnpEff,<BR/>chunked by region</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  rawvcf_N [shape=oval, style="filled,dashed", fillcolor="#e4edf7", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Raw VCF\n(cell N)"];
+
+  annotvcf_N [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Annotated VCF\n(cell N)"];
+
+
+  cnvkit_N [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+      <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">CNVkit</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">CNV calling</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  manta_N [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+      <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Manta</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">SV calling</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  cnv_out_N [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="CNV calls\n(cell N)"];
+
+  sv_out_N [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="SV calls\n(cell N)"];
+
+
+  beagle_N [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fbeaf2" COLOR="#8c3258">
+      <TR><TD BGCOLOR="#c2487d" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Beagle 5.5</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">phasing, autosomes only</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  phasedvcf_N [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Phased VCF\n(cell N)"];
+
+
+  freec_N [shape=none, margin=0, width=2.4, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fdf2e6" COLOR="#a1652a">
+      <TR><TD BGCOLOR="#d98c3d" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Control-FREEC</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">LOH + ploidy (x2):<BR/>fixed ploidy=2 &amp;<BR/>candidate-ploidy</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  freec_out_N [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="LOH / ploidy calls\n(cell N)"];
+
+
+      fastp_N -> fastqc_N -> bwa_N -> samtools_N -> picard_N -> preseq_N -> dedupbam_N;
+      dedupbam_N -> vcannot_N;
+      vcannot_N -> rawvcf_N [style=invis];
+      rawvcf_N -> annotvcf_N [xlabel="SnpEff/VEP annotation", fontsize=8];
+      dedupbam_N -> cnvkit_N -> cnv_out_N;
+      dedupbam_N -> manta_N -> sv_out_N;
+      rawvcf_N -> beagle_N -> phasedvcf_N;
+      dedupbam_N -> freec_N -> freec_out_N;
+    }
+
+    ellipsis [shape=plaintext, label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="20" COLOR="#555555">&#8942;<BR/>(N cells total)</FONT>>];
+  }
+
+  input_fastq -> scatter;
+  scatter -> fastp_1 [lhead=cluster_cell1];
+  scatter -> fastp_2 [lhead=cluster_cell2];
+  scatter -> ellipsis [style=dashed, color="#aaaaaa", arrowhead=none];
+  scatter -> fastp_N [lhead=cluster_cellN];
+
+  converge [shape=diamond, style=filled, fillcolor="#ffe49c", color="#a17304", fontname="Helvetica-Bold", fontsize=11, label="Convergence:\nall per-cell outputs\ngathered"];
+
+  dedupbam_1 -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  annotvcf_1 -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  cnv_out_1 -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  sv_out_1 -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  phasedvcf_1 -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  freec_out_1 -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  dedupbam_2 -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  annotvcf_2 -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  cnv_out_2 -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  sv_out_2 -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  phasedvcf_2 -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  freec_out_2 -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  dedupbam_N -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  annotvcf_N -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  cnv_out_N -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  sv_out_N -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  phasedvcf_N -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+  freec_out_N -> converge [style=dashed, color="#b7b7b7", penwidth=0.9, arrowsize=0.6];
+
+  subgraph cluster_cohort {
+    style="rounded,solid";
+    color="#c17817";
+    penwidth=2.2;
+    bgcolor="#fdf6ec";
+    fontname="Helvetica-Bold";
+    fontsize=16;
+    fontcolor="#8a5a14";
+    labelloc="t";
+    margin=28;
+    label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="16" COLOR="#8a5a14">COHORT-WIDE (AFTER PER-CELL CONVERGENCE) &mdash; STAGES 6&ndash;8</FONT>>;
+
+  multiqc [shape=none, margin=0, width=2.3, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#e8f4f6" COLOR="#145561">
+      <TR><TD BGCOLOR="#1f7a8c" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">MultiQC</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">aggregate Stage-1 QC +<BR/>SnpEff reports</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  multiqc_out [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="Cohort QC report"];
+
+
+    subgraph cluster_summaries {
+      style="dotted,rounded"; color="#c99a1f"; bgcolor="#fffaf0"; penwidth=1.5;
+      fontname="Helvetica-Bold"; fontsize=13; fontcolor="#8a6d1f"; margin=18;
+      label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="13" COLOR="#8a6d1f">COHORT SUMMARY ANALYSES (PARALLEL)</FONT>>;
+
+  mapd [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+      <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">MAPD QC</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">from CNVkit outputs</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  fdr [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+      <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">FDR Estimate</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">from annotated VCFs +<BR/>WGS metrics</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  artifact [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+      <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Artifact Panel</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">from annotated VCFs</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  phasesum [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+      <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Phasing Summary</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">from phased VCFs</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  lohsum [shape=none, margin=0, width=2.4, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+      <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">LOH &amp; Ploidy Summary</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">+ LOH-by-Region heatmap<BR/>(from Control-FREEC outputs)</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  qcsum [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+      <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">QC Summary</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">from MultiQC data</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  mutsig [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+      <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Mutational Signatures</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">from Artifact Panel site list</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  sequoia [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+      <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Sequoia</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">Lineage Tree build<BR/>(from annotated VCFs)</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  lineagever [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+      <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Lineage Verification</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">bootstrap</FONT></TD></TR>
+    </TABLE>
+  >];
+
+    }
+
+  dashboard [shape=none, margin=0, width=2.4, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fbeae8" COLOR="#7c2820">
+      <TR><TD BGCOLOR="#b03a2e" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="12">Build Dashboard</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">final tabbed HTML dashboard</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  }
+
+  converge -> multiqc;
+  multiqc -> multiqc_out;
+
+  converge -> mapd;
+  converge -> fdr;
+  converge -> artifact;
+  converge -> phasesum;
+  converge -> lohsum;
+  multiqc_out -> qcsum;
+  artifact -> mutsig;
+  converge -> sequoia;
+  sequoia -> lineagever;
+
+  multiqc_out -> dashboard;
+  mapd -> dashboard;
+  fdr -> dashboard;
+  artifact -> dashboard;
+  phasesum -> dashboard;
+  lohsum -> dashboard;
+  qcsum -> dashboard;
+  mutsig -> dashboard;
+  sequoia -> dashboard;
+  lineagever -> dashboard;
+
+  subgraph cluster_legend {
+    style="rounded,solid"; color="#555555"; bgcolor="#f7f7f7"; penwidth=1.3;
+    fontname="Helvetica-Bold"; fontsize=12; fontcolor="#333333"; margin=16;
+    label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="12" COLOR="#333333">LEGEND</FONT>>;
+    rank=sink;
+  legend_data [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica", fontsize=10, fontcolor="#1f3a5f", label="data (input / output)"];
+
+  legend_s1 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+      <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Stage 1</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">alignment / QC tool</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  legend_s2 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#f1ecf7" COLOR="#4a3366">
+      <TR><TD BGCOLOR="#6a4c93" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Stage 2</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">variant calling tool</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  legend_s3 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+      <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Stage 3</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">CNV / SV tool</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  legend_s4 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fbeaf2" COLOR="#8c3258">
+      <TR><TD BGCOLOR="#c2487d" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Stage 4</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">phasing tool</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  legend_s5 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fdf2e6" COLOR="#a1652a">
+      <TR><TD BGCOLOR="#d98c3d" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Stage 5</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">LOH / ploidy tool</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  legend_s6 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#e8f4f6" COLOR="#145561">
+      <TR><TD BGCOLOR="#1f7a8c" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Stage 6</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">cohort QC tool</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  legend_s7 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+      <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Stage 7</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">cohort summary tool</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  legend_s8 [shape=none, margin=0, width=2.1, label=<
+    <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" STYLE="ROUNDED" BGCOLOR="#fbeae8" COLOR="#7c2820">
+      <TR><TD BGCOLOR="#b03a2e" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="11">Stage 8</FONT></TD></TR>
+      <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="9">final tool</FONT></TD></TR>
+    </TABLE>
+  >];
+
+    legend_data -> legend_s1 -> legend_s2 -> legend_s3 -> legend_s4 -> legend_s5 -> legend_s6 -> legend_s7 -> legend_s8 [style=invis];
+  }
+}

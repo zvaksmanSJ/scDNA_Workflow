@@ -1,0 +1,9 @@
+name: resolveome-align
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - fastp=0.20.1
+  - preseq=3.2.0
+  - bedtools=2.31.1
+  - cnvkit=0.9.12
