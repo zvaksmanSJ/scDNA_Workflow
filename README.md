@@ -41,6 +41,101 @@ Both pipelines share `extra_methods/` for every phasing/LOH/lineage/QC/
 mutational-signature/dashboard calculation; neither one duplicates that
 logic.
 
+## Getting started (WDL + Cromwell path)
+
+This section covers `main.wdl` (the free, portable, deployable path) end to
+end: what you need before you start, how to install everything this
+workflow needs, and the fastest path to a running job. If you're running
+the original production pipeline on this project's own cluster instead, see
+`README_RFC_DNA_Workflow.md`'s
+["Workflow (Python/LSF production pipeline)"](./README_RFC_DNA_Workflow.md#workflow-pythonlsf-production-pipeline)
+section; if you want Sprocket instead of Cromwell, see `sprocket/README.md`
+(same setup.sh prerequisites below, plus Sprocket itself and 4 Docker images
+it needs that Cromwell doesn't).
+
+### 1. Prerequisites (not installed by `setup/setup.sh`)
+
+`setup/setup.sh` installs everything that's reasonably automatable --
+conda environments, the reference genome, containers, Beagle, Sequoia, and
+so on. A handful of things need to already be on your system first:
+
+| Requirement | Why you need it | Get it |
+|---|---|---|
+| Linux (or WSL2 on Windows) | this workflow was built/tested on an HPC Linux cluster; Apptainer/Singularity require Linux | -- |
+| conda, Miniconda, or Miniforge | `setup.sh` creates every conda environment with `conda env create` | https://docs.conda.io/en/latest/miniconda.html |
+| Apptainer or Singularity | runs the DeepVariant/VEP/Manta containers | https://apptainer.org/docs/admin/main/installation.html |
+| `git`, `curl`, `tar`, `gzip`/`gunzip`, `unzip` | `setup.sh` uses these to download/extract references and clone Sequoia | almost always preinstalled on Linux; otherwise `apt install git curl tar gzip unzip` (Debian/Ubuntu) or `yum install ...` (RHEL/CentOS) |
+| Java 11 or newer (JRE or JDK) | required to run both Cromwell (the WDL engine) and Beagle (phasing -- itself a `.jar`) | https://adoptium.net/ (OpenJDK builds), or your distro's `openjdk-11-jre` / `openjdk-17-jre` package |
+| Cromwell | the WDL execution engine -- **not installed by `setup.sh`** | download a release jar from https://github.com/broadinstitute/cromwell/releases (this workflow was built and validated against Cromwell 87) |
+| Disk space, order of 100+ GB | reference genome + VEP cache + 1000 Genomes phasing panel, before any run outputs | varies mainly with the VEP cache and phasing-panel size; plan for more as you add cells/outputs |
+
+### 2. Download and install
+
+```bash
+# 1. Clone this repo
+git clone https://github.com/zvaksmanSJ/scDNA_Workflow.git
+cd scDNA_Workflow
+
+# 2. Run the setup script -- idempotent (every step is skip-if-already-
+#    present) and safe to re-run. Installs into ./wdl_runtime/ by default;
+#    see setup/setup.sh's own header comment for its BASE_DIR/THREADS/
+#    ENSEMBL_RELEASE/VEP_CACHE_VERSION positional args and its
+#    SKIP_<SECTION>=1 env-var overrides (SKIP_CONDA, SKIP_REFERENCE,
+#    SKIP_KNOWN_SITES, SKIP_CONTAINERS, SKIP_PHASING, SKIP_FREEC_REFS,
+#    SKIP_LINEAGE).
+./setup/setup.sh
+```
+
+What this installs, all free/open (no licensed or private dependencies):
+- 4 conda environments: `resolveome-align`, `freec`, `manta_env`, `mutsig`
+- a GRCh38 reference FASTA (Ensembl) + bwa-mem2/samtools/Picard indices
+- GATK's public legacy known-sites bundle
+- stock `google/deepvariant` and `ensemblorg/ensembl-vep` containers, pulled
+  with Apptainer/Singularity (not any licensed BioSkryb image)
+- Beagle 5.5 + its public PLINK genetic maps + the 1000 Genomes GRCh38
+  high-coverage phasing panel
+- Sequoia + MPBoot (standalone, GPL-licensed lineage-tree building)
+
+It does **not** install Cromwell, Java, conda, or Apptainer/Singularity
+themselves (see Prerequisites above). It also does not provide the
+BioSkryb-private DeepVariant checkpoint or the `preseq-bioskryb`/`bam2mr`
+binaries this project's own real cohort run uses -- no public source exists
+for either; `main.wdl` falls back to DeepVariant's free bundled model if you
+don't supply a private checkpoint, and `wdl/README.md`/`sprocket/README.md`
+document the preseq gap explicitly (you'd need to supply those binaries
+yourself to use them).
+
+### 3. Quick start
+
+```bash
+# 1. Build your inputs.json. Start from the complete example and fill in
+#    your own cohort (sample_ids/r1_fastqs/r2_fastqs/donor_id/gender) plus
+#    every path setup.sh just produced (it prints each one as it runs) --
+#    or use wdl/scripts/build_inputs_json.py to merge a FASTQ manifest TSV
+#    into the example automatically (see wdl/README.md).
+cp wdl/example_inputs.json inputs.json
+# ... edit inputs.json ...
+
+# 2. Run it with Cromwell (from the repo root -- main.wdl's own `import`
+#    statements are written relative to that location)
+java -Dconfig.file=wdl/cromwell_local.conf -jar cromwell-87.jar run \
+  main.wdl -i inputs.json -m outputs.json
+
+# 3. Reorganize the outputs into a clean, browsable results tree (see
+#    "Where are my results?" below for what's in it)
+python3 wdl/scripts/organize_outputs.py \
+  --outputs-json outputs.json \
+  --sample-ids cell1 cell2 ... \
+  --dest /path/to/results \
+  --inputs-json inputs.json
+
+# 4. Open the dashboard
+xdg-open /path/to/results/dashboards/dashboard.html   # or `open` on macOS
+```
+
+For a real multi-cell cohort at LSF scale (not just this quick-start local
+run), see `wdl/README.md`'s "Running at LSF scale (production)" section.
+
 ## Where are my results?
 
 Both pipelines produce a lot of per-cell, per-stage output; **the dashboard
