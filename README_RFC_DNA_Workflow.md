@@ -307,6 +307,22 @@ just this one. Key design decisions:
   names, a model filename, a ploidy range, `"male"`) that carry no
   site-specific assumption.
 
+### A parallel Sprocket port
+
+`sprocket/` contains a second, Sprocket-native port of this same workflow
+(https://github.com/stjude-rust-labs/sprocket, St. Jude's own next-generation
+WDL engine, used in place of Cromwell at some St. Jude sites). It required
+real changes beyond a new engine config, because Sprocket's execution model
+has no "run bare on the host with a conda env activated" option -- every
+task runs inside exactly one container. See `sprocket/README.md` for the
+full explanation of what changed and why (container-per-task task
+restructuring, four new Dockerfiles replacing the three conda environments
+above, a `sprocket.toml` backend config). **This port was written and
+statically validated (`miniwdl check` passes clean) but not built, pushed,
+or run** -- it was explicitly requested as a "write the code, don't actually
+do it" exercise, distinct in scope from the WDL rewrite described in the
+rest of this section.
+
 ## Reference compatibility and limitations
 
 The workflow is configured for GRCh38 and uses a coordinated set of

@@ -1,0 +1,76 @@
+# ResolveOME single-cell DNA workflow -- Sprocket configuration.
+#
+# Configures Sprocket's LSF + Apptainer execution backend, matching this
+# cluster's own conventions (the same ones ../../extra_methods/*_lsf.py and
+# ../../python_lsf_pipeline/ already use). See ../README.md for the full
+# background, and https://sprocket.bio/reference/backends/lsf for the
+# authoritative upstream reference this file is based on.
+#
+# Usage (from workflow_DNA/, i.e. one directory up from this file):
+#   sprocket run --config sprocket/sprocket.toml sprocket/main.wdl \
+#     @inputs.json -o /path/to/output
+#
+# or, to make this the default without passing --config every time, point
+# the SPROCKET_CONFIG environment variable at this file:
+#   export SPROCKET_CONFIG=/absolute/path/to/sprocket/sprocket.toml
+
+[run.backends.default]
+type = "lsf_apptainer"
+
+# The LSF queue used by default for task execution. If omitted entirely,
+# jobs are submitted to this cluster's default queue. Adjust to match a
+# real queue name available on this cluster before use -- "standard" is
+# this project's own convention (see extra_methods/*_lsf.py's own
+# `--queue` default), not a universal LSF queue name.
+default_lsf_queue.name = "standard"
+
+# The largest CPU/memory a single task can request on this queue. These are
+# optional but strongly recommended: without them, a misconfigured task
+# requesting (say) 999 CPUs would be silently forwarded to `bsub` as-is,
+# rather than failing fast with a clear error. Tune these to match what
+# this cluster's "standard" queue hosts actually have available -- the
+# values below are a reasonable, conservative starting point, not a
+# cluster-verified fact.
+default_lsf_queue.max_cpu_per_task = 32
+default_lsf_queue.max_memory_per_task = "64 GB"
+
+# Prefix added to every LSF job name -- lets you filter `bjobs` output to
+# just this workflow's jobs, e.g. `bjobs -J "scdna*"`.
+job_name_prefix = "scdna"
+
+# The maximum number of concurrent `bsub` processes the backend will spawn
+# to queue tasks. Defaults to 10; raised here because this workflow's
+# DeepVariant/VEP stage fans out into (num_cells x num_chunks) parallel
+# tasks and benefits from submitting many of them at once. Lower this if
+# it puts too much pressure on the LSF scheduler or this project's own fair-
+# share policy.
+max_concurrency = 100
+
+# Task monitor polling interval, in seconds. 30 is Sprocket's own default;
+# listed explicitly here for visibility.
+interval = 30
+
+[run.backends.default.apptainer]
+# Shared directory for caching pulled `.sif` images across runs. Without
+# this, every new run re-pulls every container image from scratch. Point
+# this at a real shared-filesystem path before use -- the placeholder below
+# is NOT created by this file or by ../setup/setup.sh.
+image_cache_dir = "/path/to/shared/apptainer-image-cache"
+
+[run.task]
+# See the LSF + Apptainer guide (https://sprocket.bio/guides/lsf) for what
+# these control: "deny" (the default) refuses to run a task that requests
+# more than the queue's max_cpu_per_task/max_memory_per_task above, rather
+# than silently clamping the request. Listed explicitly here so the
+# behavior is visible and easy to change to "try_with_max" if preferred.
+cpu_limit_behavior = "deny"
+memory_limit_behavior = "deny"
+
+[run.workflow.scatter]
+# How many elements within a `scatter` block Sprocket evaluates
+# concurrently. The default (1000) is almost certainly too high for this
+# workflow's DeepVariant/VEP chunk-level scatter on a shared cluster --
+# lowered here to a more conservative starting point. Raise this once
+# max_concurrency and this cluster's own scheduler limits have been
+# verified to handle it.
+concurrency = 200
