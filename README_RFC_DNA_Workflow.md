@@ -215,6 +215,23 @@ Beyond the original v2.0.0 scope, this workflow adds (under
   useful for spotting both real recurrent LOH and likely artifacts (e.g. a
   pericentromeric region flagged as LOH in essentially every cell is more
   likely a mapping/reference artifact than real shared biology).
+- **Per-cell CNV burden + genome-wide scatter plots** (`cnv_overview.py`):
+  summarizes CNVkit's own segment-level integer copy-number calls
+  (`.dedup.call.cns`, already produced by the existing `variants_cnv_sv`
+  stage) into a per-cell burden table (percent of genome gained/lost/
+  altered, segment count, min/max copy number), and re-presents CNVkit's
+  own genome-wide scatter plot per cell in a grid for quick visual
+  comparison across the cohort. No new CNV caller is introduced; this is
+  purely a summary/visualization layer over existing CNVkit output.
+- **Ploidy-determination narrative** (`ploidy_determination.py`): parses
+  Control-FREEC's own stdout (from the candidate-ploidy run) to report,
+  per cell, the RSS (residual sum of squares) fit score and percent of
+  genome explained for every candidate ploidy it tried (2 through 8), plus
+  its own plain-text reasoning for the final choice -- including the cases
+  where it deliberately overrides its own best-RSS candidate in favor of a
+  lower, nearly-as-good-fitting one (FREEC's own documented tie-breaking
+  behavior). This directly answers "how was this cell's non-diploid ploidy
+  actually determined", not just "what number did it report."
 - **Lineage reconstruction with independent verification**
   (`lineage_track.py`, `verify_lineage.py`): builds a Sequoia lineage tree
   from the cohort's annotated VCFs, then independently re-runs the same
@@ -222,7 +239,13 @@ Beyond the original v2.0.0 scope, this workflow adds (under
   two tree topologies via `ape::dist.topo` (Robinson-Foulds distance) to
   report real per-branch bootstrap support -- a genuine check that the
   primary tree is not an artifact of one particular site-sampling draw, not
-  just a restatement of Sequoia's own internal bootstrap.
+  just a restatement of Sequoia's own internal bootstrap. Note:
+  `ape::dist.topo`'s branch-score distance can legitimately come back as NA
+  for rooted trees under the PH85 method (confirmed via `dist.topo`'s own
+  "Some trees were rooted" warning) -- the dashboard reports this
+  explicitly rather than crashing or silently showing a wrong number (a
+  real bug found and fixed this session: `build_extra_dashboard.py` used to
+  crash formatting a `None` branch-score distance as a float).
 - **Additional QC metrics**: MAPD (Median Absolute Pairwise Difference, a
   per-cell CNV noise/uniformity metric from CNVkit's own bins), an FDR
   estimate for the small-variant calls, and a recurrent-artifact panel that
@@ -477,13 +500,21 @@ outputs, commands, and status.
 8. **Integrated reporting.**
 9. **Extra methods (now wired directly into `run_all_resolveome.py`, not a
    separate manual step).** Phasing, LOH/ploidy (fixed + candidate), LOH-by-
-   region, MAPD/FDR/artifact-panel QC, mutational signatures, and the extra-
-   methods tabbed dashboard -- see
+   region, per-cell CNV burden + scatter plots, per-cell ploidy-determination
+   narrative (parsed from Control-FREEC's own candidate-ploidy reasoning),
+   MAPD/FDR/artifact-panel QC, mutational signatures, and the extra-methods
+   tabbed dashboard -- see
    [the extra-methods discussion](#extra-methods-additions-phasing-lohploidy-lineage-verification-and-the-tabbed-dashboard)
-   above. `lineage_track.py`/`verify_lineage.py` are deliberately NOT wired
-   in here: `source_lineage` (step 7, BaseJ lineage Nextflow) already builds
-   and bootstraps a Sequoia/MPBoot tree from the same annotated VCFs, and
-   running both would duplicate expensive compute for no new information.
+   above. `lineage_track.py`/`verify_lineage.py` are deliberately NOT part of
+   this automated orchestration: `source_lineage` (step 7, BaseJ lineage
+   Nextflow) already builds and bootstraps a Sequoia/MPBoot tree from the
+   same annotated VCFs when it runs, and running both would duplicate
+   expensive compute for no new information. For a cohort whose
+   `source_lineage` stage has NOT been run (e.g. `DNA_results`/Batch 1, where
+   the somatic-filtering->lineage Nextflow chain was never executed),
+   `lineage_track.py`/`verify_lineage.py` were run manually against that
+   cohort instead, specifically so the extra-methods dashboard's Lineage tab
+   has real data rather than showing "Pending" indefinitely.
 
 ## Tool-by-tool commands, in execution order
 
@@ -889,6 +920,19 @@ rediscovered/reverted):
 - **`verify_lineage.py` VCF suffix mismatch.** An early version looked for
   the wrong final-VCF filename suffix; fixed to match
   `*.deepvariant.raw.vep.snpeff.vcf.gz` exactly.
+- **`build_extra_dashboard.py` crash on a null branch-score distance.**
+  `ape::dist.topo()`'s branch-score distance can legitimately return NA for
+  rooted trees under the PH85 method (confirmed via `dist.topo`'s own
+  "Some trees were rooted" warning, not a scripting bug) -- the dashboard
+  builder formatted this value as a float unconditionally and crashed the
+  first time a real run produced NA. Fixed to detect a non-numeric value
+  and report "not computable for this tree pair (NA from ape::dist.topo)"
+  instead of crashing.
+- **Candidate-ploidy Control-FREEC jobs submitted with the wrong ploidy
+  range.** A first attempt at the candidate-ploidy run used `--ploidy
+  2,3,4` instead of the documented `2,3,4,5,6,7,8` range; caught before
+  any downstream result depended on it, the affected jobs were killed and
+  resubmitted with the correct range.
 - **WDL `version 1.1` incompatibility with Cromwell.** Cromwell 87 only
   recognizes `version 1.0` (and `draft-2`); a `version 1.1` declaration
   fails to parse at all. Every file under `wdl/` declares `version 1.0` for

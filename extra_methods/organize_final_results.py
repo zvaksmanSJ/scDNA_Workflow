@@ -59,6 +59,7 @@ def main():
 
     # --- extra_methods additions (this session) ---
     relink(comp / "mapd_qc.tsv", EM / "mapd_qc.tsv")
+    relink(comp / "cnv_overview.tsv", EM / "cnv_overview.tsv")
     relink(comp / "fdr_estimate.tsv", EM / "fdr_estimate.tsv")
     relink(comp / "artifact_panel", EM)  # summary + sites tsv live at EM root; see README
     relink(comp / "phasing_per_cell", D / "extra_methods" / "phasing")
@@ -68,6 +69,8 @@ def main():
     relink(comp / "loh_summary.tsv", EM / "loh_summary.tsv")
     relink(comp / "loh_by_region.tsv", EM / "loh_by_region.tsv")
     relink(comp / "ploidy_summary.tsv", EM / "ploidy_summary.tsv")
+    relink(comp / "ploidy_candidates.tsv", EM / "ploidy_candidates.tsv")
+    relink(comp / "ploidy_narrative.tsv", EM / "ploidy_narrative.tsv")
     relink(comp / "lineage", EM / "lineage")
     relink(comp / "lineage_verification", EM / "lineage_verification")
     relink(comp / "mutational_signatures", EM / "mutational_signatures")

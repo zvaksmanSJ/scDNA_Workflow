@@ -400,6 +400,13 @@ def commands(args):
                                      "--queue", args.queue),
         "mapd_qc": extra_stage("mapd_qc.py", "--cnv-dir", root / "cnv", "--manifest", passed,
                               "--output", em / "mapd_qc.tsv"),
+        "cnv_overview": extra_stage("cnv_overview.py", "--cnv-dir", root / "cnv", "--manifest", passed,
+                                   "--output", em / "cnv_overview.tsv"),
+        "ploidy_determination": extra_stage("ploidy_determination.py",
+                                           "--freec-logs-dir", root / "logs_loh_freec_candidate",
+                                           "--manifest", passed,
+                                           "--output-candidates", em / "ploidy_candidates.tsv",
+                                           "--output-narrative", em / "ploidy_narrative.tsv"),
         "fdr_estimate": extra_stage("fdr_estimate.py", "--variants-dir", root / "variants",
                                    "--picard-dir", root / "qc/picard", "--manifest", passed,
                                    "--output", em / "fdr_estimate.tsv"),
@@ -730,6 +737,7 @@ def perform(args):
             stage("loh_summary", lambda: run(cmd["loh_summary"]), tolerant=True)
             stage("ploidy_summary", lambda: run(cmd["ploidy_summary"]), tolerant=True)
             stage("loh_by_region", lambda: run(cmd["loh_by_region"]), tolerant=True)
+            stage("ploidy_determination", lambda: run(cmd["ploidy_determination"]), tolerant=True)
         if tier1_resolved == set(tier1_specs) | {"phase_variants"} and "multiqc" not in tier2_triggered:
             tier2_triggered.add("multiqc")
             stage("multiqc", multiqc, tolerant=True)
@@ -755,6 +763,7 @@ def perform(args):
     variants_cnv_sv_ok = state.get("variants_cnv_sv", {}).get("status") == "DONE"
     if variants_cnv_sv_ok:
         stage("mapd_qc", lambda: run(cmd["mapd_qc"]), tolerant=True)
+        stage("cnv_overview", lambda: run(cmd["cnv_overview"]), tolerant=True)
     if variants_small_ok:
         stage("fdr_estimate", lambda: run(cmd["fdr_estimate"]), tolerant=True)
         stage("artifact_panel", lambda: run(cmd["artifact_panel"]), tolerant=True)

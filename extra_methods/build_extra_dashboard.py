@@ -73,6 +73,57 @@ def img_tag(path: Path, alt: str, max_width: str = "100%") -> str:
     return f"<img src='{uri}' alt='{html.escape(alt)}' style='max-width:{max_width};border:1px solid #ccc;'>"
 
 
+def cnv_scatter_grid(cnv_overview_rows: list[dict]) -> str:
+    """Per-cell CNVkit genome-wide scatter plots (already produced by the
+    existing variants_cnv_sv stage -- CNVkit's own `.dedup-scatter.png`),
+    laid out as a labeled grid so every cell's CNV profile is visible at a
+    glance alongside its burden metrics."""
+    if not cnv_overview_rows:
+        return "<p class='missing'>Not yet available.</p>"
+    cards = []
+    for row in cnv_overview_rows:
+        png_path = Path(row.get("scatter_png", "")) if row.get("scatter_png") else None
+        fig = img_tag(png_path, f"{row['sample_id']} CNV scatter", max_width="100%") if png_path else \
+            "<p class='missing'>Figure not available.</p>"
+        altered = row.get("pct_genome_altered", "")
+        cards.append(
+            "<div style='display:inline-block;width:300px;vertical-align:top;margin:6px;"
+            "border:1px solid #ddd;border-radius:6px;padding:6px;background:white;'>"
+            f"<div style='font-size:0.8rem;font-weight:bold;margin-bottom:4px;'>{html.escape(row['sample_id'])}</div>"
+            f"{fig}"
+            f"<div style='font-size:0.78rem;color:#555;margin-top:4px;'>"
+            f"{altered}% genome altered &middot; {row.get('n_segments', '')} segments</div>"
+            "</div>"
+        )
+    return "".join(cards)
+
+
+def ploidy_narrative_html(narrative_rows: list[dict], candidate_rows: list[dict]) -> str:
+    """Per-cell table of Control-FREEC's own candidate-ploidy reasoning
+    (parsed verbatim from its stdout by ploidy_determination.py -- no new
+    selection logic is added here), plus the raw per-candidate RSS/percent-
+    explained fit values underneath so the quantitative basis for each
+    cell's final ploidy is visible, not just the summary narrative."""
+    if not narrative_rows:
+        return "<p class='missing'>Not yet available.</p>"
+    by_sample: dict[str, list[dict]] = {}
+    for row in candidate_rows:
+        by_sample.setdefault(row["sample_id"], []).append(row)
+
+    parts = [table_html(narrative_rows, ["sample_id", "final_ploidy", "narrative", "status"])]
+    parts.append("<h4>Per-candidate fit values (Control-FREEC's own RSS score and percent of genome "
+                  "explained for every ploidy it tried)</h4>")
+    for row in narrative_rows:
+        sample = row["sample_id"]
+        cands = sorted(by_sample.get(sample, []), key=lambda r: int(r["candidate_ploidy"]))
+        if not cands:
+            continue
+        parts.append(f"<p class='section-note' style='margin-bottom:2px;'><b>{html.escape(sample)}</b> "
+                      f"(final ploidy: {html.escape(str(row.get('final_ploidy', '')))})</p>")
+        parts.append(table_html(cands, ["candidate_ploidy", "rss_score", "pct_genome_explained"]))
+    return "".join(parts)
+
+
 def find_tree_file(lineage_dir: Path, donor_id: str) -> Path | None:
     candidate = lineage_dir / f"{donor_id}_snv_tree_with_branch_length_selectedscheme.tree"
     if candidate.is_file():
@@ -149,6 +200,7 @@ Generated alongside, not replacing, the official BaseJumper-parity workflow dash
   <button class="tablink active" onclick="showTab(event,'tab-overview')">Overview</button>
   <button class="tablink" onclick="showTab(event,'tab-qc')">QC</button>
   <button class="tablink" onclick="showTab(event,'tab-phasing')">Phasing</button>
+  <button class="tablink" onclick="showTab(event,'tab-cnv')">CNV</button>
   <button class="tablink" onclick="showTab(event,'tab-loh')">LOH</button>
   <button class="tablink" onclick="showTab(event,'tab-lohregion')">LOH by Region</button>
   <button class="tablink" onclick="showTab(event,'tab-lineage')">Lineage</button>
@@ -240,6 +292,22 @@ real (non-"/") phase &mdash; this is the het-SNP backbone the LOH tab's genotype
 $phasing_table
 </div>
 
+<div id="tab-cnv" class="tabcontent">
+<h2>CNV burden &amp; per-cell profiles (CNVkit)</h2>
+<p class="section-note">Genome-wide copy-number burden computed directly from CNVkit's own segment-level integer
+copy-number calls (<code>.dedup.call.cns</code>, already produced by the existing <code>variants_cnv_sv</code>
+stage -- no new upstream caller). <code>pct_genome_altered</code> is the fraction of the analyzed genome in a
+segment with a called copy number other than 2 (diploid); <code>pct_genome_gain</code>/<code>pct_genome_loss</code>
+split that into amplified vs. deleted. A handful of very short, very-high-copy-number segments (large
+<code>max_cn</code> values) are common CNVkit single-cell noise/artifact and should be read alongside the
+genome-wide fraction, not in isolation.</p>
+$cnv_overview_table
+<h3>Per-cell CNV scatter plots</h3>
+<p class="section-note">CNVkit's own genome-wide log2-ratio scatter plot per cell (already generated during
+variant calling; re-presented here for a quick side-by-side view across the cohort).</p>
+<div>$cnv_scatter_grid</div>
+</div>
+
 <div id="tab-loh" class="tabcontent">
 <h2>Loss of heterozygosity &amp; ploidy (Control-FREEC)</h2>
 <p class="section-note">Control-FREEC (Boeva et al., <i>Bioinformatics</i> 2011/2012; GPL license, bioconda) computes
@@ -269,7 +337,16 @@ validation (karyotyping, DNA-content flow cytometry, or a matched-bulk sample) &
 independent validation the reference paper has access to (6 technologies) and we do not. Both the fixed-ploidy=2
 and the candidate-selected tables are shown so this assumption's impact is visible rather than hidden either way.</div>
 $ploidy_table
+
+<h3>How each cell's ploidy was determined</h3>
+<p class="section-note">For cells where <code>output_ploidy</code> above is not 2 (not diploid), this shows
+Control-FREEC's own stated reasoning -- the per-candidate RSS (residual sum of squares) fit score and percent of
+observed copy-number changes explained for every ploidy it tried (2 through 8), followed by its own decision
+narrative (including the cases where it deliberately overrode its own best-RSS pick in favor of a lower, nearly-
+as-good-fitting ploidy -- FREEC's own documented tie-breaking behavior, not a custom rule added here).</p>
+$ploidy_narrative
 </div>
+
 
 <div id="tab-lohregion" class="tabcontent">
 <h2>LOH by region (cohort-wide recurrence)</h2>
@@ -437,6 +514,9 @@ def main():
     phasing_rows = read_tsv(EM / "phasing_summary.tsv")
     loh_rows = read_tsv(EM / "loh_summary.tsv")
     ploidy_rows = read_tsv(EM / "ploidy_summary.tsv")
+    cnv_overview_rows = read_tsv(EM / "cnv_overview.tsv")
+    ploidy_candidate_rows = read_tsv(EM / "ploidy_candidates.tsv")
+    ploidy_narrative_rows = read_tsv(EM / "ploidy_narrative.tsv")
     qc_summary_rows = read_tsv(EM / "qc_summary.tsv")
     bootstrap_rows = read_tsv(EM / "lineage_verification" / "bootstrap_support_report.tsv")
     mutsig_contrib_rows = read_tsv(EM / "mutational_signatures" / "signature_contributions.tsv")
@@ -463,6 +543,11 @@ def main():
     if verification_summary is not None:
         rf = verification_summary.get("robinson_foulds_distance")
         bsd = verification_summary.get("branch_score_distance")
+        # ape::dist.topo()'s branch-score distance can legitimately come back
+        # as NA/null (observed with rooted trees under the PH85 method --
+        # see dist.topo()'s own "Some trees were rooted" warning), so this
+        # must not assume a numeric value is always present.
+        bsd_text = f"{bsd:.4f}" if isinstance(bsd, (int, float)) else "not computable for this tree pair (NA from ape::dist.topo)"
         same_leaves = verification_summary.get("same_leaf_set")
         n_low = verification_summary.get("n_low_confidence_branches")
         n_branches = verification_summary.get("n_internal_branches")
@@ -473,7 +558,7 @@ def main():
             f"<li>Independent resample (different subsampled sites): "
             f"{'same 15-cell leaf set recovered' if same_leaves else 'LEAF SET MISMATCH -- see raw output'}</li>"
             f"<li>Robinson-Foulds topology distance between primary and resampled trees: {rf}</li>"
-            f"<li>Branch-score distance: {bsd:.4f}</li>"
+            f"<li>Branch-score distance: {bsd_text}</li>"
             "</ul>"
         )
     else:
@@ -507,10 +592,15 @@ def main():
         multiqc_relpath=args.multiqc_relpath,
         phasing_table=table_html(phasing_rows, ["sample_id", "n_records", "n_het", "n_het_phased",
                                                  "het_phased_fraction", "status"]),
+        cnv_overview_table=table_html(cnv_overview_rows, ["sample_id", "n_segments", "pct_genome_gain",
+                                                          "pct_genome_loss", "pct_genome_altered",
+                                                          "max_cn", "min_cn", "status"]),
+        cnv_scatter_grid=cnv_scatter_grid(cnv_overview_rows),
         loh_table=table_html(loh_rows, ["sample_id", "n_regions", "n_loh_regions", "loh_region_fraction",
                                         "loh_bp", "total_bp", "loh_genome_fraction", "status"]),
         ploidy_table=table_html(ploidy_rows, ["sample_id", "output_ploidy", "sample_purity",
                                               "good_polynomial_fit", "status"]),
+        ploidy_narrative=ploidy_narrative_html(ploidy_narrative_rows, ploidy_candidate_rows),
         loh_region_fig=img_tag(EM / "loh_by_region_heatmap.png", "Cohort-wide LOH recurrence heatmap"),
         loh_region_table=table_html(loh_region_rows, ["chrom", "start", "end", "n_cells_loh",
                                                        "n_cells_total", "fraction_cells_loh",
