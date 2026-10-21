@@ -82,7 +82,7 @@ cd scDNA_Workflow
 #    ENSEMBL_RELEASE/VEP_CACHE_VERSION positional args and its
 #    SKIP_<SECTION>=1 env-var overrides (SKIP_CONDA, SKIP_REFERENCE,
 #    SKIP_KNOWN_SITES, SKIP_CONTAINERS, SKIP_PHASING, SKIP_FREEC_REFS,
-#    SKIP_LINEAGE).
+#    SKIP_PARITY_TOOLS, SKIP_LINEAGE).
 ./setup/setup.sh
 ```
 
@@ -94,16 +94,20 @@ What this installs, all free/open (no licensed or private dependencies):
   with Apptainer/Singularity (not any licensed BioSkryb image)
 - Beagle 5.5 + its public PLINK genetic maps + the 1000 Genomes GRCh38
   high-coverage phasing panel
+- preseq v2.0.3's `bam2mr`/`gc_extrap` pair (GPLv3, fully public --
+  github.com/smithlabcode/preseq, also on bioconda), built from the
+  official release tarball and exposed as `bam2mr`/`preseq-bioskryb` in the
+  `resolveome-align` env -- the "-bioskryb" suffix is only this pipeline's
+  own naming convention to distinguish it from the newer, CLI-incompatible
+  bioconda `preseq` 3.x also installed in that same environment (3.x
+  renamed `bam2mr` to `to-mr`); it is **not** a private BioSkryb binary.
 - Sequoia + MPBoot (standalone, GPL-licensed lineage-tree building)
 
 It does **not** install Cromwell, Java, conda, or Apptainer/Singularity
 themselves (see Prerequisites above). It also does not provide the
-BioSkryb-private DeepVariant checkpoint or the `preseq-bioskryb`/`bam2mr`
-binaries this project's own real cohort run uses -- no public source exists
-for either; `main.wdl` falls back to DeepVariant's free bundled model if you
-don't supply a private checkpoint, and `wdl/README.md`/`sprocket/README.md`
-document the preseq gap explicitly (you'd need to supply those binaries
-yourself to use them).
+BioSkryb-private DeepVariant checkpoint this project's own real cohort run
+uses; `main.wdl` falls back to DeepVariant's free bundled model if you
+don't supply a private checkpoint.
 
 > **If you override `ENSEMBL_RELEASE` away from its default (111) when
 > running `setup.sh`**, also update `inputs.json`'s `snpeff_db` to match

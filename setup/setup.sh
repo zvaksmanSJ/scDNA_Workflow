@@ -32,7 +32,7 @@
 # Individual sections can be skipped with SKIP_<SECTION>=1 env vars, e.g.:
 #   SKIP_CONDA=1 SKIP_CONTAINERS=1 ./setup.sh
 # Recognized: SKIP_CONDA, SKIP_REFERENCE, SKIP_KNOWN_SITES, SKIP_CONTAINERS,
-#             SKIP_PHASING, SKIP_FREEC_REFS, SKIP_LINEAGE
+#             SKIP_PHASING, SKIP_FREEC_REFS, SKIP_PARITY_TOOLS, SKIP_LINEAGE
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -342,7 +342,23 @@ else
 fi
 
 # ===========================================================================
-# 7. Lineage tools: Sequoia (standalone, GPLv3) + MPBoot (standalone, GPLv2)
+# 7. Library-complexity QC: preseq v2.0.3's bam2mr/gc_extrap pair (GPLv3,
+#    fully public -- https://github.com/smithlabcode/preseq -- NOT a
+#    private/proprietary binary, despite the pipeline-internal "-bioskryb"
+#    naming convention used to distinguish it from the newer, CLI-
+#    incompatible bioconda preseq 3.x also installed in this same env).
+#    align_qc.wdl's AlignTrimQC task calls these two commands directly.
+# ===========================================================================
+if [[ "${SKIP_PARITY_TOOLS:-0}" != "1" ]]; then
+  log "=== Library-complexity QC tools (preseq 2.0.3 bam2mr/gc_extrap) ==="
+  conda env update -n resolveome-align -f "${SCRIPT_DIR}/parity_tools.environment.yml"
+  TARGET_DIR="${BASE_DIR}/tools/preseq-2.0.3" "${SCRIPT_DIR}/setup_parity_tools.sh"
+else
+  log "SKIP_PARITY_TOOLS=1 -- skipping preseq 2.0.3 bam2mr/gc_extrap install"
+fi
+
+# ===========================================================================
+# 8. Lineage tools: Sequoia (standalone, GPLv3) + MPBoot (standalone, GPLv2)
 #    -- NOT the licensed BioSkryb apptainer container used for the real run
 # ===========================================================================
 if [[ "${SKIP_LINEAGE:-0}" != "1" ]]; then
@@ -375,6 +391,7 @@ log "=== Setup summary ==="
 conda env list | grep -E "resolveome-align|freec|manta_env|mutsig" || true
 for f in "${BASE_DIR}/containers/deepvariant.sif" "${BASE_DIR}/containers/vep.r${ENSEMBL_RELEASE}.sif" \
          "${BASE_DIR}/refs/genome/GRCh38.primary.fa" "${BASE_DIR}/tools/beagle/beagle.27Feb25.75f.jar" \
+         "${BASE_DIR}/tools/preseq-2.0.3/bin/bam2mr" "${BASE_DIR}/tools/preseq-2.0.3/bin/preseq" \
          "${BASE_DIR}/tools/sequoia/Sequoia" "${BASE_DIR}/tools/mpboot"; do
   [[ -e "$f" ]] && echo "[OK] $f" || echo "[MISS] $f"
 done

@@ -170,9 +170,7 @@ supported protocol.)
 
 ```bash
 # 1. Build and push the 4 new container images this port needs (one-time;
-#    NOT done by this port -- see containers/*.Dockerfile, especially
-#    resolveome-align.Dockerfile's header comment about the bam2mr/
-#    preseq-bioskryb gap)
+#    NOT done by this port -- see containers/*.Dockerfile)
 docker build -f containers/resolveome-align.Dockerfile -t ghcr.io/<you>/scdna-workflow-resolveome-align:latest .
 docker push ghcr.io/<you>/scdna-workflow-resolveome-align:latest
 # ... repeat for freec.Dockerfile, mutsig.Dockerfile, lineage.Dockerfile
@@ -227,12 +225,10 @@ does not perform, consistent with "write the code, don't actually do it."
 
 - **Does not install Sprocket.** (step 2 above)
 - **Does not build or push any of the 4 new Docker images.** (step 1 above)
-  `resolveome-align.Dockerfile` additionally has a known, documented gap:
-  `bam2mr`/`preseq-bioskryb` have no public package source and must be
-  supplied by you from this project's existing installation -- see that
-  Dockerfile's own header comment. This gap already existed in the Cromwell
-  port's `../setup/setup.sh` (which also never installs these two
-  binaries); it is not something this Sprocket port introduces.
+  `resolveome-align.Dockerfile` builds `bam2mr`/`preseq-bioskryb` from
+  preseq v2.0.3's official public release source (same approach
+  `../setup/setup_parity_tools.sh` already uses for the Cromwell path) --
+  no private binary or manual step is needed for these two tools.
 - **Does not run `../setup/setup.sh`.** (step 3 above -- same script as the
   Cromwell path; nothing Sprocket-specific needed here)
 - **Does not run the workflow**, smoke-test it against real Sprocket/LSF

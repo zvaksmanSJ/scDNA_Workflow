@@ -12,25 +12,18 @@
 # MutationalSignatures), and tasks/common.wdl's IndexVcf helper.
 #
 # -----------------------------------------------------------------------
-# !!! KNOWN GAP, NOT SOLVED BY THIS DOCKERFILE: bam2mr / preseq-bioskryb
+# bam2mr / preseq-bioskryb: built from source here, not a private binary
 # -----------------------------------------------------------------------
-# align_qc.wdl's AlignTrimQC task calls `bam2mr` and `preseq-bioskryb`
-# (BioSkryb's own reference-compatible preseq 2.0.3 build) for its library-
-# complexity step. Neither tool has a public conda/pip/apt package -- they
-# are historically sourced from a project-internal bundle (see
-# Backup_code/setup_resolveome_alignment.sh), not from any public registry
-# this Dockerfile could pull from. This gap ALREADY EXISTS in the Cromwell
-# version of this workflow (../../setup/setup.sh never installs these two
-# binaries either) -- it is not something this Sprocket port introduces.
-#
-# Before building this image for real use, obtain `bam2mr` and
-# `preseq-bioskryb` yourself (e.g. copy them from this project's existing
-# resolveome_align/tools/ installation) and place them in a local
-# `./bin/` directory next to this Dockerfile, then uncomment the COPY line
-# below. Without them, AlignTrimQC's preseq step will fail outright (not
-# gracefully degrade -- `bam2mr` is called unconditionally, before the
-# existing graceful NOT_COMPUTABLE fallback, which only covers
-# preseq-bioskryb's own model-fit failures, not a missing binary).
+# align_qc.wdl's AlignTrimQC task calls `bam2mr` and `preseq-bioskryb` for
+# its library-complexity step. Despite the pipeline-internal "-bioskryb"
+# naming (used only to distinguish this exact build from the newer,
+# CLI-incompatible bioconda `preseq` 3.x, which renamed `bam2mr` to
+# `to-mr`), these are preseq v2.0.3's own `bam2mr`/`gc_extrap` commands
+# (GPLv3, fully public -- github.com/smithlabcode/preseq) -- not a
+# private/proprietary BioSkryb build, and not something you need to
+# supply yourself. This mirrors exactly what ../../setup/setup_parity_
+# tools.sh already does for the Cromwell path's `resolveome-align` conda
+# environment.
 # -----------------------------------------------------------------------
 FROM condaforge/miniforge3:24.9.2-0
 
@@ -54,19 +47,28 @@ RUN mamba create -y -n resolveome-align -c conda-forge -c bioconda \
       pandas \
       matplotlib \
       numpy \
+      make \
+      gxx \
+      curl \
     && mamba clean -afy
 
 # Put the env's bin/ directly on PATH so tasks don't need `conda activate`
 # (Sprocket tasks run as plain `bash` scripts, not login shells).
 ENV PATH="/opt/conda/envs/resolveome-align/bin:${PATH}"
 
-# ---- bam2mr / preseq-bioskryb: see the gap note above ----
-# COPY bin/bam2mr bin/preseq-bioskryb /opt/conda/envs/resolveome-align/bin/
-# RUN chmod +x /opt/conda/envs/resolveome-align/bin/bam2mr \
-#               /opt/conda/envs/resolveome-align/bin/preseq-bioskryb
+# ---- bam2mr / preseq-bioskryb: built from the official public release ----
+RUN curl --fail --location --retry 3 \
+      https://github.com/smithlabcode/preseq/releases/download/v2.0.3/preseq_v2.0.3.tar.bz2 \
+      --output /tmp/preseq_v2.0.3.tar.bz2 \
+    && tar -xjf /tmp/preseq_v2.0.3.tar.bz2 -C /tmp \
+    && cd /tmp/preseq \
+    && make all CXXFLAGS="-O2 -Wall -fno-common" CFLAGS="-O2 -fcommon" \
+    && install -m 755 preseq /opt/conda/envs/resolveome-align/bin/preseq-bioskryb \
+    && install -m 755 bam2mr /opt/conda/envs/resolveome-align/bin/bam2mr \
+    && cd / && rm -rf /tmp/preseq /tmp/preseq_v2.0.3.tar.bz2
 
 # Sanity check at build time that the environment's tools are reachable.
 RUN bwa-mem2 version && samtools --version | head -1 && bcftools --version | head -1 \
     && picard CollectWgsMetrics --version 2>&1 | head -1 && fastp --version 2>&1 \
     && fastqc --version && multiqc --version && cnvkit.py version && snpEff -version \
-    && gatk --version
+    && gatk --version && bam2mr 2>&1 | head -1 && preseq-bioskryb 2>&1 | head -1

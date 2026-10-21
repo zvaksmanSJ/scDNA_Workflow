@@ -11,7 +11,25 @@ for tool in fastp bedtools preseq; do
 done
 
 # Keep the reference's bam2mr/gc_extrap pair separate from the installed preseq 3.
-TARGET="$HERE/../resolveome_align/tools/preseq-2.0.3"  # resolveome_align/ lives at workflow_DNA root, one level above this script's own setup/ subfolder
+#
+# This builds preseq v2.0.3 (GPLv3, fully public -- https://github.com/
+# smithlabcode/preseq, also on bioconda) directly from its official GitHub
+# release tarball below. It is NOT a private/proprietary BioSkryb binary and
+# has no license restriction of its own; it is pinned to exactly v2.0.3
+# because that release's `bam2mr`/`gc_extrap` CLI is what this project's
+# pipeline (and BioSkryb's own ResolveDNA protocol) was built against --
+# preseq 3.x renamed/restructured this command (`bam2mr` -> `to-mr`) in an
+# incompatible way, so the newer bioconda `preseq` package (also installed
+# in this same environment for anything else that wants it) cannot simply
+# be substituted here.
+#
+# TARGET_DIR defaults to this project's own existing resolveome_align/
+# installation (preserving this script's original, already-in-production-
+# use behavior for direct/standalone invocation); setup.sh instead passes
+# an explicit BASE_DIR-relative path so a fresh clone's run installs into
+# the portable wdl_runtime/ tree instead of creating a new resolveome_align/
+# directory out of thin air.
+TARGET="${TARGET_DIR:-$HERE/../resolveome_align/tools/preseq-2.0.3}"
 if [[ ! -x "$TARGET/bin/bam2mr" || ! -x "$TARGET/bin/preseq" ]]; then
   mkdir -p "$TARGET"
   BUILD=$(mktemp -d "$TARGET/build.XXXXXX")

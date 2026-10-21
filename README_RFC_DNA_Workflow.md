@@ -933,6 +933,25 @@ rediscovered/reverted):
   2,3,4` instead of the documented `2,3,4,5,6,7,8` range; caught before
   any downstream result depended on it, the affected jobs were killed and
   resubmitted with the correct range.
+- **Incorrect "no public source" claim for `bam2mr`/`preseq-bioskryb`.**
+  Despite the pipeline-internal "-bioskryb" naming (used only to
+  distinguish this exact build from the newer, CLI-incompatible bioconda
+  `preseq` 3.x, which renamed `bam2mr` to `to-mr`), these are preseq
+  v2.0.3's own public, GPLv3-licensed `bam2mr`/`gc_extrap` commands
+  (github.com/smithlabcode/preseq, also on bioconda) -- not a private
+  BioSkryb binary. `setup/setup_parity_tools.sh` already built these from
+  the official public release tarball, but it was never wired into
+  `setup/setup.sh`'s own flow, and three docs (this file's predecessor
+  claims in `README.md`, `sprocket/README.md`, and
+  `sprocket/containers/resolveome-align.Dockerfile`) incorrectly stated no
+  public source existed. Fixed: `setup.sh` now has its own
+  `SKIP_PARITY_TOOLS`-gated section that updates the `resolveome-align`
+  conda env with `parity_tools.environment.yml`'s packages and calls
+  `setup_parity_tools.sh` (parameterized via a new `TARGET_DIR` override so
+  a fresh clone installs under the portable `wdl_runtime/` tree instead of
+  this project's own `resolveome_align/`), the Sprocket port's Dockerfile
+  now builds the same public source directly instead of requiring a manual
+  `COPY`, and all three docs are corrected.
 - **WDL `version 1.1` incompatibility with Cromwell.** Cromwell 87 only
   recognizes `version 1.0` (and `draft-2`); a `version 1.1` declaration
   fails to parse at all. Every file under `wdl/` declares `version 1.0` for
