@@ -235,7 +235,7 @@ def write_job_script(path: Path, sample_id: str, r1: str, r2: str, args, outdir:
 #BSUB -q {args.queue}
 #BSUB -n {args.threads}
 #BSUB -M {args.mem_mb}
-#BSUB -R "rusage[mem={args.mem_mb}]"
+#BSUB -R "span[hosts=1] rusage[mem={args.mem_mb}]"
 #BSUB -W {args.wall}
 #BSUB -oo {outdir}/logs/{sample_id}.%J.out
 #BSUB -eo {outdir}/logs/{sample_id}.%J.err

@@ -157,7 +157,7 @@ print("DONE")
 #BSUB -q {args.queue}
 #BSUB -n {args.threads}
 #BSUB -M {args.mem_mb}
-#BSUB -R "rusage[mem={args.mem_mb}]"
+#BSUB -R "span[hosts=1] rusage[mem={args.mem_mb}]"
 #BSUB -W {args.wall}
 {dep_line}#BSUB -oo {logs}/barcode_cellcall.%J.out
 #BSUB -eo {logs}/barcode_cellcall.%J.err
