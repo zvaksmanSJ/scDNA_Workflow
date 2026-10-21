@@ -31,7 +31,7 @@ PASS and "." records before being sent to VEP.
 
 Manifest:
 
-    <outdir>/logs_step3/step3_job_manifest.tsv
+    <outdir>/logs_step3/<--job-manifest-name, default step3_job_manifest.tsv>
 """
 
 import argparse
@@ -422,7 +422,29 @@ def submit_job(
 
     dependency_arg = ""
     if dependency:
-        dependency_arg = f'-w "{dependency}" '
+        # Linux execve() enforces a per-argument length limit (MAX_ARG_STRLEN,
+        # 131072 bytes) independent of the much larger overall ARG_MAX; a
+        # dependency expression built from many thousands of job IDs (e.g.
+        # MultiQC depending on every per-chunk DeepVariant/VEP/CNVkit/Manta
+        # job across a 31-cell cohort, ~10,447 jobs) can exceed it, which
+        # crashes the submitting bsub call itself with `OSError: [Errno 7]
+        # Argument list too long` -- a failure to even submit the job, not a
+        # job failure. Confirmed: this exact 31-cell cohort's dependency
+        # string was ~194 KB. Skip the inline dependency above a safe margin
+        # rather than crash; the caller is then responsible for only
+        # invoking this job once its real prerequisites have completed
+        # (see run_all_resolveome.py's own "multiqc" stage, which relies on
+        # its prior "variants" stage's wait_jobs() having already done so).
+        MAX_SAFE_DEPENDENCY_LEN = 100_000  # comfortable margin under 131072
+        if len(dependency) > MAX_SAFE_DEPENDENCY_LEN:
+            print(
+                f"[WARN] Dependency expression for {job_name} is "
+                f"{len(dependency):,} characters (limit ~131,072); skipping "
+                f"the inline LSF dependency to avoid a submission crash. "
+                f"This job is submitted WITHOUT a -w condition."
+            )
+        else:
+            dependency_arg = f'-w "{dependency}" '
 
     command = (
         f'bsub -J "{job_name}" '
@@ -644,6 +666,19 @@ def main():
     parser.add_argument("--wall", default="145:00")
     parser.add_argument("--chroms", default="all")
     parser.add_argument("--chunk-size-bp", type=int, default=20_000_000)
+    parser.add_argument(
+        "--job-manifest-name",
+        default="step3_job_manifest.tsv",
+        help=(
+            "Filename (not a path) for this invocation's job manifest, written "
+            "under <outdir>/logs_step3/. Defaults to the original hardcoded name "
+            "for backward compatibility. Give concurrently-running invocations "
+            "against the same --outdir distinct names (e.g. when splitting the "
+            "small-variant track from the CNV/SV track) -- the manifest file is "
+            "truncated at init and appended to without locking, so two "
+            "invocations sharing one name would corrupt each other's rows."
+        ),
+    )
 
     # Tool switches
     parser.add_argument("--snv-tools", default="deepvariant")
@@ -670,12 +705,26 @@ def main():
     parser.add_argument(
         "--dv-add-hp-channel",
         action="store_true",
-        # Matches BaseJumper's own basej-google-deepvariant invocation of this
-        # same sc_af.model.ckpt checkpoint, which never requests an HP channel.
-        # Enabling it caused a channel-count mismatch against the checkpoint's
-        # trained shape (confirmed via the MT chunk, which failed 100% of the
-        # time across every cell with this flag on).
-        default=False,
+        # Default restored to True (2026-10-20): the 2026-10-16 change that
+        # flipped this to False was based on a misdiagnosis. The real cause
+        # of the "confirmed via the MT chunk" failure referenced in that
+        # change was MT's missing population VCF (the bioskryb-af-20241102
+        # bundle has no MT/chrM entry -- see parse_chroms()'s own comment
+        # above, which already excludes MT from "--chroms all" for exactly
+        # this reason): with --use_allele_frequency on, an MT chunk silently
+        # produces NO allele-frequency channel, so disabling the HP channel
+        # "by coincidence" restored MT's channel count to match a 7-channel
+        # expectation -- while breaking every real (non-MT) chromosome,
+        # since this checkpoint (sc_af.model.ckpt) was trained on 8 channels
+        # (6 base + allele-frequency + HP) and raises `ValueError: Received
+        # incompatible tensor with shape (3, 3, 8, 32) when attempting to
+        # restore variable with shape (3, 3, 7, 32)` for every chunk once
+        # the HP channel is missing. Confirmed by diffing this project's own
+        # real, successful Batch 1 run (15 cells, 9,993 real VCFs produced),
+        # whose own job scripts have --add_hp_channel present, against a
+        # 31-cell run with this flag off, which failed 100% of DeepVariant
+        # chunks across every one of its 31 cells with exactly that error.
+        default=True,
     )
     parser.add_argument("--dv-channels", default="")
     parser.add_argument(
@@ -793,7 +842,7 @@ def main():
 
     manifest_path = os.path.join(
         logs_dir,
-        "step3_job_manifest.tsv",
+        args.job_manifest_name,
     )
     init_manifest(manifest_path)
 
@@ -1075,7 +1124,17 @@ def main():
                     job_name=job_name,
                     queue=args.queue,
                     ncpus=max(2, args.threads // 2),
-                    memory_mb=max(24000, args.mem_mb // 2),
+                    # 32 GB floor (up from 24 GB, 2026-10-21): no chunk has
+                    # actually hit TERM_MEMLIMIT across either production
+                    # cohort (2,962 + 10,381 chunks checked), but this bumps
+                    # headroom proactively rather than reactively, since
+                    # --dv-add-hp-channel is now always on (the HP/haplotype
+                    # channel was restored to its required default=True on
+                    # 2026-10-20 -- see that flag's own comment). An extra
+                    # input channel means a larger per-example tensor for
+                    # call_variants' CNN to hold in memory than the earlier,
+                    # briefly-used 7-channel (no-HP) configuration needed.
+                    memory_mb=max(32000, args.mem_mb // 2),
                     wall=args.wall,
                     out_log=out_log,
                     err_log=err_log,
@@ -1637,12 +1696,31 @@ def main():
             # cnvkit.py batch rejects --fasta together with -r/--reference: -r
             # implies reusing an existing flat reference, so --fasta (used only
             # to build a new reference on the fly) must be omitted in that case.
+            #
+            # fasta_arg/reference_arg are combined onto ONE template line below
+            # (not two, each with a conditional trailing "\"), and neither one
+            # carries its own embedded backslash: whichever of the two is set,
+            # the template supplies exactly one trailing "\" for that combined
+            # line. A prior version had each arg on its own line with its own
+            # conditional backslash; when cnv_reference_cnn was set (this
+            # project's normal/required path), fasta_arg was "" with no
+            # backslash, leaving a bare blank line between "--method wgs \"
+            # and "-r ... \" -- bash does not continue a "\"-terminated line
+            # onto a blank unescaped line, so the command silently truncated
+            # to "cnvkit.py batch BAM --method wgs" (dropping -r and every
+            # argument after it), which 100% of this cohort's cells hit:
+            # "Option -n/--normal must be given to build a new reference if
+            # -r/--reference is not used." Confirmed by diffing this
+            # project's own real, successful Batch 1 run (15 cells, 15 real
+            # .cnr files produced; its job scripts have no blank line) against
+            # this run's job scripts (blank line present, 0 real .cnr files
+            # produced for any of 31 cells).
             if args.cnv_reference_cnn:
                 reference_arg = f"-r {q(args.cnv_reference_cnn)}"
                 fasta_arg = ""
             else:
                 reference_arg = ""
-                fasta_arg = f"--fasta {q(args.ref)} \\"
+                fasta_arg = f"--fasta {q(args.ref)}"
 
             cnv_body = textwrap.dedent(
                 f"""
@@ -1653,8 +1731,7 @@ def main():
 
                 cnvkit.py batch {q(bam_path)} \\
                   --method wgs \\
-                  {fasta_arg}
-                  {reference_arg} \\
+                  {fasta_arg}{reference_arg} \\
                   --output-dir {q(sample_cnv_dir)} \\
                   --diagram \\
                   --scatter \\

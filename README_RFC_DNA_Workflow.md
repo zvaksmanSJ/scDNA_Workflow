@@ -451,19 +451,39 @@ outputs, commands, and status.
    preseq.
 3. **Cell calling.** Apply the three explicit cell thresholds (reads,
    mapping rate, proper-pair rate).
-4. **Per-cell small variants, annotation, SVs, and CNVkit.** DeepVariant,
-   SnpEff/VEP annotation, Manta, CNVkit.
-5. **Ginkgo, coverage, and library dashboard.**
+4. **Five mutually-independent per-cell tracks, submitted together and
+   polled concurrently (2026-10-21 rewrite; see
+   ["Known issues and fixes"](#known-issues-and-fixes-baked-into-this-workflow)).**
+   A failure anywhere in one track is recorded and never blocks or crashes
+   the others:
+   - *Small variants:* DeepVariant (8-channel, HP + allele-frequency) ->
+     VEP -> SnpEff.
+   - *CNV/SV:* CNVkit + Manta.
+   - *Ginkgo* (orthogonal CNV cross-check).
+   - *Coverage QC* (breadth/depth + whole-genome coverage map).
+   - *Control-FREEC* (LOH + ploidy, fixed=2 and candidate=2,3,4,5,6,7,8
+     runs).
+   Two further per-cell steps fire as soon as their single real prerequisite
+   resolves, independent of the other four tracks: Beagle phasing (needs
+   only the small-variants track's raw VCF) and the composite,
+   BaseJumper-derived cell QC gate (needs only the CNV/SV track's CNVkit
+   `.cnr`/`.call.cns` -- informational only, does not exclude any cell).
+5. **Ginkgo, coverage, and library dashboard.** Ginkgo/coverage are part of
+   step 4 above; the library QC dashboard runs immediately after step 3
+   (it only needs step 2's QC files, so it does not wait on step 4 at all).
 6. **Candidate preparation and somatic filtering.** BaseJ somatic workflow.
 7. **Lineage and SV comparison.** Source lineage (SNV/indel/combined) plus
    SV similarity.
 8. **Integrated reporting.**
-9. **Extra methods (this session's additions, run after step 4's BAMs/VCFs
-   exist).** Phasing, LOH/ploidy (fixed + candidate), LOH-by-region, lineage
-   + verification, MAPD/FDR/artifact-panel QC, mutational signatures, and
-   the final tabbed dashboard -- see
+9. **Extra methods (now wired directly into `run_all_resolveome.py`, not a
+   separate manual step).** Phasing, LOH/ploidy (fixed + candidate), LOH-by-
+   region, MAPD/FDR/artifact-panel QC, mutational signatures, and the extra-
+   methods tabbed dashboard -- see
    [the extra-methods discussion](#extra-methods-additions-phasing-lohploidy-lineage-verification-and-the-tabbed-dashboard)
-   above.
+   above. `lineage_track.py`/`verify_lineage.py` are deliberately NOT wired
+   in here: `source_lineage` (step 7, BaseJ lineage Nextflow) already builds
+   and bootstraps a Sequoia/MPBoot tree from the same annotated VCFs, and
+   running both would duplicate expensive compute for no new information.
 
 ## Tool-by-tool commands, in execution order
 
@@ -711,11 +731,25 @@ The shell launcher defaults to non-submitting preflight behavior when no
 mode is selected. `--plan` and `--preflight` do not submit production jobs.
 Production submission requires an explicit operator decision.
 
-The driver records stage state and LSF job IDs, waits for worker completion,
-and starts dependent stages only after their prerequisites succeed. A failed
-or missing job is an error, not a success-shaped fallback. Completed outputs
-and prior result roots must not be overwritten or invalidated to force a
-rerun.
+The driver records per-stage state and LSF job IDs and persists it after
+every transition. Foundational stages (alignment, cell calling) remain
+strictly fail-fast: a failure there is a real error, not a success-shaped
+fallback, since literally nothing downstream can proceed without them.
+Starting at the per-cell variant/CNV/SV/phasing/LOH stage (2026-10-21
+rewrite), the five mutually-independent tracks described above are
+submitted concurrently and polled together: each is resolved (`DONE` or, if
+any of its jobs exited, `FAILED_PARTIAL`) the moment its *own* job set
+reaches a terminal state, and that resolution immediately triggers its own
+specific downstream dependents -- a DeepVariant/VEP/SnpEff failure can
+never block recognition of the CNVkit/Manta/Ginkgo/coverage/Control-FREEC
+tracks' success (or vice versa). Every stage from that point onward
+(`combined_cnv`, the cohort summary analyses, somatic/lineage, SV
+similarity, both dashboards) runs in a tolerant mode: a failure is recorded
+in `workflow_state.json` with its error message and does not crash the
+driver: strictly-downstream stages are skipped with an explicit
+`NOT_COMPUTABLE` status rather than attempted against missing input.
+Completed outputs and prior result roots must not be overwritten or
+invalidated to force a rerun.
 
 Review-only commands (run from `workflow_DNA/python_lsf_pipeline/`):
 ```bash
@@ -741,10 +775,21 @@ local/LSF agreement. These checks validate workflow behavior on test data;
 they do not establish the biological validity or completion of a
 production cohort.
 
-**Extra-methods additions:** run to completion on the real 15-cell cohort
-(Cell4 excluded per explicit instruction -- see the session's handoff
-history); results are real and on disk under `DNA_results/`, surfaced in
-the final dashboard.
+**Extra-methods additions:** now wired directly into `run_all_resolveome.py`
+(2026-10-21) rather than run as separate manual scripts. Run end to end
+against the real, completed 15-cell Batch 1 cohort (`DNA_results/`) to
+validate the wiring: MAPD QC, FDR estimate, artifact panel, mutational
+signatures, Beagle phasing (15/15 cells), both Control-FREEC runs (fixed
+ploidy=2 and candidate ploidy=2-8, 15/15 cells each), phasing summary, LOH
+summary, ploidy summary, LOH-by-region, and QC summary all completed
+successfully, with real results on disk under `DNA_results/extra_methods/`.
+The candidate-ploidy run reproduces the documented ceiling-pushing caveat
+in practice (ploidy distribution across the cohort: 8=4 cells, 6=4, 7=3,
+2=3, 3=1 -- most cells were pushed toward the upper end of the 2-8 range
+rather than converging on a stable value, exactly the known FREEC behavior
+described above). The extra-methods dashboard renders the complete result
+set, and `organize_final_results.py` was run to refresh the symlinked
+final-results tree under `DNA_results/final/`.
 
 **WDL pipeline:** `miniwdl check main.wdl` passes with zero real errors.
 A genuine local execution smoke test (not a full production run) was
@@ -767,6 +812,33 @@ These were found and fixed during development; both the Python/LSF and WDL
 code already incorporate the fixes (noted here so they are not
 rediscovered/reverted):
 
+- **Single fail-fast "variants" stage crashed the whole driver on one
+  flaky chunk (2026-10-20/21).** The original orchestrator submitted
+  DeepVariant+VEP+SnpEff+CNVkit+Manta as one combined stage and waited on
+  it as a single blocking unit; one transient chunk failure anywhere in
+  that ~10,000-job population raised immediately, aborting the driver
+  before even fully independent stages (Ginkgo, coverage) got a chance to
+  run. Fix: split into `variants_small` (DeepVariant/VEP/SnpEff) and
+  `variants_cnv_sv` (CNVkit/Manta), submitted concurrently with Ginkgo,
+  coverage, and Control-FREEC via a shared tolerant poller
+  (`poll_multi_stage`) that resolves and reacts to each stage independently
+  -- see ["Execution and failure handling"](#execution-and-failure-handling).
+- **DeepVariant memory headroom for the HP/haplotype channel.** No chunk
+  has actually hit `TERM_MEMLIMIT` at the prior 24 GB floor across either
+  real cohort checked (2,962 + 10,381 DeepVariant chunk logs), but
+  `--dv-add-hp-channel` is now always on (required by the
+  `sc_af.model.ckpt` checkpoint's 8-channel shape -- see the channel-count
+  fix below), and an extra input channel means a larger per-example tensor
+  for `call_variants`' CNN to hold than the 7-channel (no-HP) configuration
+  briefly used needed. Fix: raised the floor to 32 GB proactively
+  (`max(32000, --mem-mb // 2)`), rather than waiting for a real OOM kill.
+- **DeepVariant 8-channel/HP-channel misdiagnosis.** `--dv-add-hp-channel`
+  had been flipped to `default=False` based on a misdiagnosis blaming MT
+  chunk failures; the real cause was MT's missing population-VCF entry
+  (already handled separately). With HP disabled, every non-MT chunk
+  produced only 7 of the 8 channels the `sc_af.model.ckpt` checkpoint was
+  trained on, failing 100% of the time with a tensor-shape mismatch. Fixed
+  by restoring `default=True`.
 - **SnpEff OOM under LSF.** LSF reserved memory but Java was not explicitly
   given enough heap, so SnpEff crashed loading the GRCh38.105 database with
   default heap. Fix: explicit `-Xmx`, with the LSF memory request set to at
@@ -794,6 +866,22 @@ rediscovered/reverted):
 - **Beagle chrX phasing failure.** The 1000G panel's chrX reference VCF
   mixes haploid/diploid genotype representations that Beagle cannot parse
   in one pass for hemizygous male samples; chrX is excluded from phasing.
+- **Alignment/cell-call jobs scattered across hosts.** `step1`/`step2`'s
+  `bsub -R` requests were missing `span[hosts=1]` (step3 already had it),
+  so LSF could satisfy an `-n 8` request by scattering single cores across
+  up to 8 different hosts once the cluster saturated. Since fastp/bwa-mem2/
+  samtools are single-host multithreaded, only the one host actually
+  running the process did real work -- measured 6-13% CPU efficiency on
+  scattered jobs vs. near-full utilization once fixed.
+- **MultiQC dependency string exceeded Linux's per-argument limit.** At
+  this project's scale (~10,000+ jobs in the combined small-variant/CNV/SV
+  population), an LSF `-w` dependency expression built from one job ID per
+  prerequisite reached ~194 KB, over the 128 KB `MAX_ARG_STRLEN` limit on a
+  single argument (a different, smaller limit than the overall `ARG_MAX`),
+  crashing the orchestrator's own subprocess call. Fix: MultiQC now runs as
+  its own standalone, dependency-free stage once `wait_jobs()`/
+  `poll_multi_stage()` has already confirmed the prerequisite stage's jobs
+  are terminal -- no LSF `-w` expression is ever built for it.
 - **NFS write-corruption pattern.** Some tools intermittently corrupted
   output when writing directly to the shared NFS mount; the fix is a
   local-then-copy pattern (write to local scratch, then copy the completed

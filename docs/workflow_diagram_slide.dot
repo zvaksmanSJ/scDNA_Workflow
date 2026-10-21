@@ -1,0 +1,413 @@
+digraph ResolveOME_DNA_Workflow_Slide {
+  rankdir=TB;
+  compound=true;
+  splines=ortho;
+  nodesep=0.32;
+  ranksep=0.34;
+  pad=0.3;
+  bgcolor="white";
+  fontname="Helvetica-Bold";
+  fontsize=30;
+  labelloc="t";
+  fontcolor="#1a1a1a";
+  label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="30">ResolveOME Single-Cell DNA Workflow</FONT><BR/><FONT FACE="Helvetica" POINT-SIZE="18" COLOR="#444444">Production pipeline (python_lsf_pipeline / run_all_resolveome.py) &mdash; 2026-10-21</FONT>>;
+  dpi=150;
+  outputorder=edgesfirst;
+  node [fontname="Helvetica"];
+  edge [fontname="Helvetica-Bold", fontsize=14, color="#7a7a7a", penwidth=1.5, arrowsize=0.9];
+
+  input_fastq [shape=oval, style="filled", fillcolor="#c9deef", color="#6f9bc7", fontname="Helvetica-Bold", fontsize=18, fontcolor="#1f3a5f", label="Per-cell paired FASTQs\n(R1 / R2, merged)"];
+  input_fastq -> fastp [lhead=cluster_percell];
+
+  subgraph cluster_percell {
+    style="dashed,rounded";
+    color="#2e6da4";
+    penwidth=2.8;
+    bgcolor="#f3f8fd";
+    fontname="Helvetica-Bold";
+    fontsize=21;
+    fontcolor="#1f4e79";
+    labelloc="t";
+    margin=26;
+    label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="21" COLOR="#1f4e79">PER-CELL &mdash; scattered across all cells, fully in parallel &nbsp; (n = 15 cells, Batch 1  |  n = 31 cells, Batch 2/3)</FONT>>;
+
+    # ============================ Workset 1 ============================
+    subgraph cluster_ws_align {
+      style="solid,rounded"; color="#8aa9cc"; bgcolor="#ffffff"; penwidth=1.8;
+      fontname="Helvetica-Bold"; fontsize=18; fontcolor="#2e6da4"; margin=16;
+      label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="18" COLOR="#2e6da4">WORKSET: Alignment &amp; Library QC</FONT>>;
+
+      fastp [shape=none, margin=0, width=2.24, label=<
+        <TABLE BORDER="1.6" CELLBORDER="0" CELLSPACING="0" CELLPADDING="10" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+          <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="19">fastp</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="16">trim + poly-G</FONT></TD></TR>
+        </TABLE>
+      >];
+      fastqc [shape=none, margin=0, width=2.24, label=<
+        <TABLE BORDER="1.6" CELLBORDER="0" CELLSPACING="0" CELLPADDING="10" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+          <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="19">FastQC</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="16">raw + trimmed</FONT></TD></TR>
+        </TABLE>
+      >];
+      bwa [shape=none, margin=0, width=2.24, label=<
+        <TABLE BORDER="1.6" CELLBORDER="0" CELLSPACING="0" CELLPADDING="10" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+          <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="19">bwa-mem2</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="16">alignment</FONT></TD></TR>
+        </TABLE>
+      >];
+      samtools_pic [shape=none, margin=0, width=3.14, label=<
+        <TABLE BORDER="1.6" CELLBORDER="0" CELLSPACING="0" CELLPADDING="10" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+          <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="19">samtools + Picard + preseq</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="16">sort/dedup &middot; WGS + alignment metrics &middot; library complexity</FONT></TD></TR>
+        </TABLE>
+      >];
+      dedupbam [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontname="Helvetica-Bold", fontsize=17, fontcolor="#1f3a5f", label="Dedup BAM"];
+      { rank=same; fastp; fastqc; bwa; samtools_pic; dedupbam; }
+
+
+      fastp -> fastqc -> bwa -> samtools_pic -> dedupbam;
+    }
+
+    # ============================ Workset 2 ============================
+    subgraph cluster_ws_variants {
+      style="solid,rounded"; color="#8aa9cc"; bgcolor="#ffffff"; penwidth=1.6;
+      fontname="Helvetica-Bold"; fontsize=15; fontcolor="#2e6da4"; margin=14;
+      label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="15" COLOR="#2e6da4">WORKSET: Variant / CNV / SV Calling (3 independent tracks)</FONT>>;
+
+      dv [shape=none, margin=0, width=2.91, label=<
+        <TABLE BORDER="1.8" CELLBORDER="0" CELLSPACING="0" CELLPADDING="10" STYLE="ROUNDED" BGCOLOR="#f1ecf7" COLOR="#4a3366">
+          <TR><TD BGCOLOR="#6a4c93" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="17">DeepVariant + VEP + SnpEff</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="14">8-channel (HP+AF), chunked by region</FONT></TD></TR>
+        </TABLE>
+      >];
+      cnvkit [shape=none, margin=0, width=2.13, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+          <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="17">CNVkit</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="14">CNV calling</FONT></TD></TR>
+        </TABLE>
+      >];
+      manta [shape=none, margin=0, width=2.13, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+          <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="17">Manta</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="14">SV calling</FONT></TD></TR>
+        </TABLE>
+      >];
+      { rank=same; dv; cnvkit; manta; }
+
+      rawvcf [shape=oval, style="filled,dashed", fillcolor="#e4edf7", color="#6f9bc7", fontsize=14, fontcolor="#1f3a5f", label="Raw VCF"];
+      annotvcf [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontsize=14, fontcolor="#1f3a5f", label="Annotated VCF"];
+      cnv_out [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontsize=14, fontcolor="#1f3a5f", label="CNV calls\n(.cnr/.cns)"];
+      sv_out [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontsize=14, fontcolor="#1f3a5f", label="SV calls"];
+      { rank=same; rawvcf; annotvcf; cnv_out; sv_out; }
+
+      dv -> rawvcf;
+      rawvcf -> annotvcf [xlabel="VEP+SnpEff", fontsize=12];
+      cnvkit -> cnv_out;
+      manta -> sv_out;
+    }
+    dedupbam -> dv [xlabel="variants_small", fontsize=12];
+    dedupbam -> cnvkit [xlabel="variants_cnv_sv", fontsize=12];
+    dedupbam -> manta;
+
+    # ============================ Workset 3 ============================
+    subgraph cluster_ws_secondary {
+      style="solid,rounded"; color="#8aa9cc"; bgcolor="#ffffff"; penwidth=1.6;
+      fontname="Helvetica-Bold"; fontsize=15; fontcolor="#2e6da4"; margin=14;
+      label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="15" COLOR="#2e6da4">WORKSET: Secondary per-cell steps (each gated on one track above)</FONT>>;
+
+      beagle [shape=none, margin=0, width=2.13, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fbeaf2" COLOR="#8c3258">
+          <TR><TD BGCOLOR="#c2487d" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="17">Beagle 5.5</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="14">phasing, autosomes only</FONT></TD></TR>
+        </TABLE>
+      >];
+      qcgate [shape=none, margin=0, width=3.14, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+          <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="17">Composite cell QC gate</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="14">from CNVkit + idxstats/Picard/preseq &mdash; informational only</FONT></TD></TR>
+        </TABLE>
+      >];
+      { rank=same; beagle; qcgate; }
+
+      phasedvcf [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontsize=14, fontcolor="#1f3a5f", label="Phased VCF"];
+      beagle -> phasedvcf;
+    }
+    rawvcf -> beagle [xlabel="phase_variants", fontsize=12];
+    cnv_out -> qcgate;
+
+    # ============================ Workset 4 ============================
+    subgraph cluster_ws_ortho {
+      style="solid,rounded"; color="#8aa9cc"; bgcolor="#ffffff"; penwidth=1.6;
+      fontname="Helvetica-Bold"; fontsize=15; fontcolor="#2e6da4"; margin=14;
+      label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="15" COLOR="#2e6da4">WORKSET: Orthogonal Cross-Checks (independent of DeepVariant/CNVkit)</FONT>>;
+
+      ginkgo [shape=none, margin=0, width=2.13, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+          <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="17">Ginkgo</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="14">orthogonal CNV cross-check</FONT></TD></TR>
+        </TABLE>
+      >];
+      coverage [shape=none, margin=0, width=2.13, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#e8f4f6" COLOR="#145561">
+          <TR><TD BGCOLOR="#1f7a8c" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="17">Coverage QC</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="14">breadth/depth + WG map</FONT></TD></TR>
+        </TABLE>
+      >];
+      freec [shape=none, margin=0, width=2.58, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fdf2e6" COLOR="#a1652a">
+          <TR><TD BGCOLOR="#d98c3d" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="17">Control-FREEC</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="14">LOH + ploidy (x2 runs):<BR/>fixed ploidy=2 &amp; candidate 2-8</FONT></TD></TR>
+        </TABLE>
+      >];
+      { rank=same; ginkgo; coverage; freec; }
+
+      ginkgo_out [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontsize=14, fontcolor="#1f3a5f", label="Ginkgo CNV calls"];
+      cov_out [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontsize=14, fontcolor="#1f3a5f", label="Coverage report"];
+      freec_out [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontsize=14, fontcolor="#1f3a5f", label="LOH / ploidy calls"];
+      { rank=same; ginkgo_out; cov_out; freec_out; }
+
+      ginkgo -> ginkgo_out;
+      coverage -> cov_out;
+      freec -> freec_out;
+    }
+    dedupbam -> ginkgo;
+    dedupbam -> coverage;
+    dedupbam -> freec;
+  }
+
+  converge [shape=diamond, style=filled, fillcolor="#ffe49c", color="#a17304", fontname="Helvetica-Bold", fontsize=16, width=2.24, height=1.0, label="Convergence:\nall per-cell Tier-1\noutputs gathered"];
+  dedupbam -> converge [style=invis];
+  annotvcf -> converge [style=dashed, color="#b7b7b7", penwidth=1.0, arrowsize=0.7];
+  cnv_out -> converge [style=dashed, color="#b7b7b7", penwidth=1.0, arrowsize=0.7];
+  sv_out -> converge [style=dashed, color="#b7b7b7", penwidth=1.0, arrowsize=0.7];
+  ginkgo_out -> converge [style=dashed, color="#b7b7b7", penwidth=1.0, arrowsize=0.7];
+  cov_out -> converge [style=dashed, color="#b7b7b7", penwidth=1.0, arrowsize=0.7];
+  freec_out -> converge [style=dashed, color="#b7b7b7", penwidth=1.0, arrowsize=0.7];
+  phasedvcf -> converge [style=dashed, color="#b7b7b7", penwidth=1.0, arrowsize=0.7];
+
+  subgraph cluster_cohort {
+    style="rounded,solid";
+    color="#c17817";
+    penwidth=2.4;
+    bgcolor="#fdf6ec";
+    fontname="Helvetica-Bold";
+    fontsize=20;
+    fontcolor="#8a5a14";
+    labelloc="t";
+    margin=22;
+    label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="21" COLOR="#8a5a14">COHORT-WIDE &mdash; after per-cell convergence (one track failing never blocks the others)</FONT>>;
+
+    # ============================ Workset 5 ============================
+    subgraph cluster_ws_aggregate {
+      style="solid,rounded"; color="#d7a24a"; bgcolor="#fffdf8"; penwidth=1.6;
+      fontname="Helvetica-Bold"; fontsize=15; fontcolor="#8a5a14"; margin=14;
+      label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="15" COLOR="#8a5a14">WORKSET: Cohort Aggregation</FONT>>;
+
+      lib_dash [shape=none, margin=0, width=2.35, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#e8f4f6" COLOR="#145561">
+          <TR><TD BGCOLOR="#1f7a8c" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="17">Library QC Dashboard</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="14">from fastp/Picard/FastQC &mdash; runs early, no wait</FONT></TD></TR>
+        </TABLE>
+      >];
+      multiqc [shape=none, margin=0, width=2.35, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#e8f4f6" COLOR="#145561">
+          <TR><TD BGCOLOR="#1f7a8c" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="17">MultiQC</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="14">aggregate QC + SnpEff</FONT></TD></TR>
+        </TABLE>
+      >];
+      combined_cnv [shape=none, margin=0, width=2.35, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+          <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="17">Combined CNV</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="14">from CNVkit &mdash; 1Mb + 200kb bins, gene-annotated</FONT></TD></TR>
+        </TABLE>
+      >];
+      { rank=same; lib_dash; multiqc; combined_cnv; }
+    }
+    samtools_pic -> lib_dash [style=dashed, color="#aaaaaa", penwidth=1.2, arrowsize=0.7];
+    converge -> multiqc;
+    converge -> combined_cnv;
+
+    # ============================ Workset 6 ============================
+    subgraph cluster_summaries {
+      style="dashed,rounded"; color="#c99a1f"; bgcolor="#fffaf0"; penwidth=1.6;
+      fontname="Helvetica-Bold"; fontsize=16; fontcolor="#8a6d1f"; margin=16;
+      label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="16" COLOR="#8a6d1f">WORKSET: Cohort Summary Analyses (extra_methods/, parallel)</FONT>>;
+
+      mapd [shape=none, margin=0, width=2.13, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+          <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">MAPD QC</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">from CNVkit .cnr</FONT></TD></TR>
+        </TABLE>
+      >];
+      fdr [shape=none, margin=0, width=2.13, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+          <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">FDR Estimate</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">annot. VCF + WGS metrics</FONT></TD></TR>
+        </TABLE>
+      >];
+      artifact [shape=none, margin=0, width=2.13, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+          <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">Artifact Panel</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">recurrent-site filter</FONT></TD></TR>
+        </TABLE>
+      >];
+      phasesum [shape=none, margin=0, width=2.13, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+          <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">Phasing Summary</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">from Beagle VCFs</FONT></TD></TR>
+        </TABLE>
+      >];
+      { rank=same; mapd; fdr; artifact; phasesum; }
+
+      lohsum [shape=none, margin=0, width=2.46, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+          <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">LOH &amp; Ploidy Summary</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">+ by-region heatmap (candidate-ploidy FREEC)</FONT></TD></TR>
+        </TABLE>
+      >];
+      qcsum [shape=none, margin=0, width=2.13, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+          <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">QC Summary</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">from MultiQC general stats</FONT></TD></TR>
+        </TABLE>
+      >];
+      mutsig [shape=none, margin=0, width=2.35, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+          <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">Mutational Signatures</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">from Artifact Panel sites</FONT></TD></TR>
+        </TABLE>
+      >];
+      { rank=same; lohsum; qcsum; mutsig; }
+      artifact -> mutsig;
+    }
+    converge -> mapd;
+    converge -> fdr;
+    converge -> artifact;
+    converge -> phasesum;
+    converge -> lohsum;
+    multiqc -> qcsum;
+
+    # ============================ Workset 7 ============================
+    subgraph cluster_ws_somatic {
+      style="solid,rounded"; color="#d7a24a"; bgcolor="#fffdf8"; penwidth=1.6;
+      fontname="Helvetica-Bold"; fontsize=15; fontcolor="#8a5a14"; margin=14;
+      label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="15" COLOR="#8a5a14">WORKSET: Somatic Filtering &amp; Lineage Chain</FONT>>;
+
+      somatic_inputs [shape=none, margin=0, width=2.24, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#f1ecf7" COLOR="#4a3366">
+          <TR><TD BGCOLOR="#6a4c93" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="16">Somatic Inputs</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">raw DeepVariant + Manta, filtered</FONT></TD></TR>
+        </TABLE>
+      >];
+      basej_somatic [shape=none, margin=0, width=2.24, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#f1ecf7" COLOR="#4a3366">
+          <TR><TD BGCOLOR="#6a4c93" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="16">BaseJ Somatic</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">Nextflow, SNV/indel filtering</FONT></TD></TR>
+        </TABLE>
+      >];
+      integrated [shape=none, margin=0, width=2.24, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#f1ecf7" COLOR="#4a3366">
+          <TR><TD BGCOLOR="#6a4c93" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="16">Integrated Matrices</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">SV + lineage inputs</FONT></TD></TR>
+        </TABLE>
+      >];
+      lineage [shape=none, margin=0, width=2.46, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#f1ecf7" COLOR="#4a3366">
+          <TR><TD BGCOLOR="#6a4c93" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="16">Source Lineage</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">Sequoia + MPBoot (basej-lineage)</FONT></TD></TR>
+        </TABLE>
+      >];
+      { rank=same; somatic_inputs; basej_somatic; integrated; lineage; }
+      somatic_inputs -> basej_somatic -> integrated -> lineage;
+
+      svsim [shape=none, margin=0, width=2.24, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+          <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="16">SV Similarity</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">all features + shared-only (2 thresholds)</FONT></TD></TR>
+        </TABLE>
+      >];
+      somatic_inputs -> svsim;
+    }
+    converge -> somatic_inputs [xlabel="raw DeepVariant + Manta", fontsize=11];
+
+    # ============================ Workset 8 ============================
+    subgraph cluster_ws_final {
+      style="solid,rounded"; color="#c7554a"; bgcolor="#fff9f8"; penwidth=1.6;
+      fontname="Helvetica-Bold"; fontsize=15; fontcolor="#7c2820"; margin=14;
+      label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="15" COLOR="#7c2820">WORKSET: Final Dashboards</FONT>>;
+
+      extra_dash [shape=none, margin=0, width=2.58, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fbeae8" COLOR="#7c2820">
+          <TR><TD BGCOLOR="#b03a2e" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="16">Extra-Methods Dashboard</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">phasing/LOH/MAPD/FDR/mutsig tabs</FONT></TD></TR>
+        </TABLE>
+      >];
+      final_dash [shape=none, margin=0, width=2.58, label=<
+        <TABLE BORDER="1.6" CELLBORDER="0" CELLSPACING="0" CELLPADDING="10" STYLE="ROUNDED" BGCOLOR="#fbeae8" COLOR="#7c2820">
+          <TR><TD BGCOLOR="#b03a2e" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="17">Final Dashboard</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">tabbed HTML, all stage links</FONT></TD></TR>
+        </TABLE>
+      >];
+      organize [shape=none, margin=0, width=2.58, label=<
+        <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fbeae8" COLOR="#7c2820">
+          <TR><TD BGCOLOR="#b03a2e" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="16">Organize Final Results</FONT></TD></TR>
+          <TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" COLOR="#333333" POINT-SIZE="13">symlinked navigation tree</FONT></TD></TR>
+        </TABLE>
+      >];
+      { rank=same; extra_dash; final_dash; organize; }
+      extra_dash -> final_dash -> organize;
+    }
+    mutsig -> extra_dash;
+    qcsum -> extra_dash [style=invis];
+    lohsum -> extra_dash [style=invis];
+  }
+
+  subgraph cluster_legend {
+    style="rounded,solid"; color="#555555"; bgcolor="#f7f7f7"; penwidth=1.4;
+    fontname="Helvetica-Bold"; fontsize=16; fontcolor="#333333"; margin=14;
+    label=<<FONT FACE="Helvetica-Bold" POINT-SIZE="16" COLOR="#333333">LEGEND</FONT>>;
+    rank=sink;
+    legend_data [shape=oval, style="filled", fillcolor="#dbe9f6", color="#6f9bc7", fontsize=14, fontcolor="#1f3a5f", label="data (input/output)"];
+    legend_s1 [shape=none, margin=0, width=2.24, label=<
+      <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#eaf4f8" COLOR="#1f5c76">
+        <TR><TD BGCOLOR="#2e86ab" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">Alignment/QC</FONT></TD></TR>
+      </TABLE>
+    >];
+    legend_s2 [shape=none, margin=0, width=2.24, label=<
+      <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#f1ecf7" COLOR="#4a3366">
+        <TR><TD BGCOLOR="#6a4c93" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">Variant calling</FONT></TD></TR>
+      </TABLE>
+    >];
+    legend_s3 [shape=none, margin=0, width=2.24, label=<
+      <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#eaf6ef" COLOR="#2a6144">
+        <TR><TD BGCOLOR="#3f8f63" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">CNV / SV</FONT></TD></TR>
+      </TABLE>
+    >];
+    legend_s4 [shape=none, margin=0, width=2.24, label=<
+      <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fbeaf2" COLOR="#8c3258">
+        <TR><TD BGCOLOR="#c2487d" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">Phasing</FONT></TD></TR>
+      </TABLE>
+    >];
+    legend_s5 [shape=none, margin=0, width=2.24, label=<
+      <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fdf2e6" COLOR="#a1652a">
+        <TR><TD BGCOLOR="#d98c3d" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">LOH / ploidy</FONT></TD></TR>
+      </TABLE>
+    >];
+    legend_s6 [shape=none, margin=0, width=2.24, label=<
+      <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#e8f4f6" COLOR="#145561">
+        <TR><TD BGCOLOR="#1f7a8c" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">Cohort QC</FONT></TD></TR>
+      </TABLE>
+    >];
+    legend_s7 [shape=none, margin=0, width=2.24, label=<
+      <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fff6e0" COLOR="#a17304">
+        <TR><TD BGCOLOR="#e0a106" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">Cohort summary</FONT></TD></TR>
+      </TABLE>
+    >];
+    legend_s8 [shape=none, margin=0, width=2.24, label=<
+      <TABLE BORDER="1.4" CELLBORDER="0" CELLSPACING="0" CELLPADDING="9" STYLE="ROUNDED" BGCOLOR="#fbeae8" COLOR="#7c2820">
+        <TR><TD BGCOLOR="#b03a2e" ALIGN="CENTER" STYLE="ROUNDED"><FONT COLOR="white" FACE="Helvetica-Bold" POINT-SIZE="15">Final/dashboard</FONT></TD></TR>
+      </TABLE>
+    >];
+    legend_data -> legend_s1 -> legend_s2 -> legend_s3 -> legend_s4 -> legend_s5 -> legend_s6 -> legend_s7 -> legend_s8 [style=invis];
+  }
+}

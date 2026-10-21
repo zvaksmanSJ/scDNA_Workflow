@@ -17,7 +17,7 @@ this file is just a quick navigation map of the folder layout below.
 | `wdl_runtime/` | Where `setup/setup.sh` installs everything it downloads by default (refs, conda envs, containers, tools) -- kept entirely separate from `resolveome_align/` below. Empty until you run `setup.sh`. |
 | `extra_methods/` | Calculation scripts (Python/R) used by **both** pipelines: Beagle phasing, Control-FREEC LOH/ploidy, Sequoia lineage + verification, MAPD/FDR/artifact-panel QC, mutational signatures, and the final tabbed dashboard builder. |
 | `python_lsf_pipeline/` | The original, **still-active production** Python/LSF pipeline (`step1_*.py` .. `step7_*.py`, orchestrated by `run_all_resolveome.py`/`.sh`), its tests, and its own `logs/`. |
-| `docs/` | The workflow diagram (`workflow_diagram.{png,svg,dot}`). |
+| `docs/` | The workflow diagrams: `workflow_diagram.{png,svg,dot}` (detailed technical reference) and `workflow_diagram_slide.{png,svg,dot}` (widescreen, single-slide-friendly version with bigger fonts/boxes for presentations -- same content, same tools, reorganized layout). |
 | `resolveome_align/` | **Left exactly as-is** (per explicit instruction): this project's real reference genome, conda environment, and container bundle for its own cohort run. Not touched or duplicated by anything above. |
 | `Backup_code/` | Historical snapshots of older script versions -- not active workflow code. |
 | `dv_compat_test/` | Scratch/results directory for `setup/test_dv_checkpoint_compat.sh`. |
