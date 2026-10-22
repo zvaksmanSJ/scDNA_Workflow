@@ -276,6 +276,34 @@ process {{
     withName: 'FILTER_VEP_GERMLINE_CHR' {{
         container = '{TOOLS / "containers/basej-somatic/variantannotation_0.4.sif"}'
     }}
+    // basej-somatic's own nextflow.config gives SORT_INDEX_VEP_VCF only a
+    // 1h time budget with no retry (unlike its sibling VEP_ANNOTATE, which
+    // produces the same per-group VCF with a 4h budget) -- too tight for
+    // some chromosomes' pooled multi-cell VCFs (confirmed: a real
+    // "somatic_cells_X" run exceeded 1h and was killed by LSF, exit 140,
+    // with no retry since this config's own `errorStrategy = 'terminate'`
+    // wildcard above applies project-wide by design). Raised to match
+    // VEP_ANNOTATE's own 4h budget for the same data.
+    withName: 'SORT_INDEX_VEP_VCF' {{
+        time = 4.h
+    }}
+    // VARIANT_PREFILTER_TABLE_PERCHR occasionally hangs indefinitely (0s of
+    // CPU time accruing over 45+ minutes, confirmed via bjobs on a live run,
+    // on 2 of 24 per-chromosome tasks -- not a data-size/timeout issue, since
+    // the same task completes in well under a minute for every other
+    // chromosome including larger ones). The upstream basej-somatic
+    // nextflow.config already gives this process its own `errorStrategy =
+    // 'retry'` with escalating memory on attempt 2 (15GB -> 60GB), but this
+    // run's own project-wide `errorStrategy = 'terminate'` wildcard above
+    // was overriding that, so one hung task (after being killed to unblock
+    // it) took down the entire multi-hour run instead of just retrying.
+    // Restoring a dedicated retry policy here so a future hang on this
+    // process is handled automatically instead of requiring a manual
+    // bkill + full relaunch.
+    withName: 'VARIANT_PREFILTER_TABLE_PERCHR' {{
+        errorStrategy = 'retry'
+        maxRetries = 2
+    }}
 """
     else:
         content += f"""
@@ -433,7 +461,16 @@ def commands(args):
                                  "--manifest", passed,
                                  "--output-tsv", em / "qc_summary.tsv",
                                  "--output-png", em / "qc_overview.png"),
-        "mutational_signatures": ["Rscript", str(EXTRA / "mutational_signatures.R"),
+        # Bare "Rscript" would resolve to the driver process's own active
+        # env (resolveome-align, inherited from this whole orchestrator's
+        # `conda run --prefix resolveome-align` launch), which has no
+        # MutationalPatterns/BSgenome/VariantAnnotation installed -- those
+        # packages only exist in the dedicated "mutsig" conda env (see
+        # setup.sh's mutsig.yml). Must invoke via `conda run -n mutsig`
+        # explicitly; confirmed this works correctly even nested inside an
+        # already-conda-run'd resolveome-align process.
+        "mutational_signatures": ["conda", "run", "-n", "mutsig", "Rscript",
+                                 str(EXTRA / "mutational_signatures.R"),
                                  str(em / "artifact_panel_sites.tsv"), str(em / "mutational_signatures")],
         "build_extra_dashboard": extra_stage("build_extra_dashboard.py",
                                             "--extra-methods-dir", em,

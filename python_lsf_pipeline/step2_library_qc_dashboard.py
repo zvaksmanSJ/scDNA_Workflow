@@ -133,7 +133,13 @@ def numeric_metrics(row, prefix):
     for key, value in row.items():
         if key not in {"CATEGORY", "SAMPLE", "LIBRARY", "READ_GROUP", "PAIR_ORIENTATION",
                        "ACCUMULATION_LEVEL", "READS_USED"}:
-            if value in ("", "NaN"):
+            if value in ("", "NaN", "?"):
+                # Picard's CollectWgsMetrics uses the literal "?" sentinel
+                # (distinct from "" or "NaN") specifically for
+                # FOLD_80/90/95_BASE_PENALTY when the coverage distribution
+                # doesn't reach that percentile threshold -- expected and
+                # common for uneven/low-coverage single-cell PTA data, not
+                # a tool or parsing error.
                 result[prefix + key] = None
                 result[prefix + key + "_reason"] = "Picard reported an undefined value; insufficient eligible observations"
             else:
