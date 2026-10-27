@@ -117,27 +117,38 @@ def preflight(args):
         ")) { if(!requireNamespace(p,quietly=TRUE)) stop(paste('Missing',p));"
         "cat(p,as.character(packageVersion(p)),'\\n') }"
     )
-    result = run(["apptainer", "exec", lineage_image, "Rscript", "-e", code], capture_output=True)
+    # --no-mount /programs: this preflight() check (unlike write_nf_config()'s
+    # production apptainer invocations, which already set this) ran a bare
+    # "apptainer exec" on every single container probe below. Apptainer's
+    # default auto-mount of host paths like /programs is node-dependent --
+    # some compute nodes grant read access, others return a hard
+    # "permission denied" that aborts the whole container launch before the
+    # command inside it ever runs. Confirmed as the cause of a real driver
+    # crash (FATAL: container creation failed... stat /programs: permission
+    # denied) when LSF happened to schedule this job on such a node. Matches
+    # the same flag already used everywhere else in this file for exactly
+    # this reason.
+    result = run(["apptainer", "exec", "--no-mount", "/programs", lineage_image, "Rscript", "-e", code], capture_output=True)
     report["lineage_packages"] = result.stdout
     for script in LINEAGE_SCRIPTS:
-        run(["apptainer", "exec", lineage_image, "test", "-s", f"/usr/local/bin/scripts/{script}"])
-    run(["apptainer", "exec", lineage_image, "/usr/local/bin/scripts/mpboot-avx", "-h"],
+        run(["apptainer", "exec", "--no-mount", "/programs", lineage_image, "test", "-s", f"/usr/local/bin/scripts/{script}"])
+    run(["apptainer", "exec", "--no-mount", "/programs", lineage_image, "/usr/local/bin/scripts/mpboot-avx", "-h"],
         capture_output=True)
     result = run([sys.executable, HERE / "step7_ginkgo_cnv.py", "--check-environment"],
                  capture_output=True)
     report["ginkgo"] = json.loads(result.stdout)
-    run(["apptainer", "exec", TOOLS / "containers/manta.sif",
+    run(["apptainer", "exec", "--no-mount", "/programs", TOOLS / "containers/manta.sif",
          "/usr/local/bin/configManta.py", "--help"],
         capture_output=True)
     require_file(TOOLS / "step3_bundle/resources/cnvkit/reference.cnn")
-    run(["apptainer", "exec", TOOLS / "containers/vep.r112.sif", "vep", "--help"],
+    run(["apptainer", "exec", "--no-mount", "/programs", TOOLS / "containers/vep.r112.sif", "vep", "--help"],
         capture_output=True)
-    run(["apptainer", "exec",
+    run(["apptainer", "exec", "--no-mount", "/programs",
          cache / "quay.io-biocontainers-ensembl-vep-115.2--pl5321h2a3209d_1.img",
          "vep", "--help"], capture_output=True)
     # The model/channel compatibility is unchanged from the validated workflow.
     for executable in ("make_examples", "call_variants", "postprocess_variants"):
-        run(["apptainer", "exec", TOOLS / "containers/deepvariant.sif",
+        run(["apptainer", "exec", "--no-mount", "/programs", TOOLS / "containers/deepvariant.sif",
              "/bin/test", "-x", f"/opt/deepvariant/bin/{executable}"])
     require_file(TOOLS / "basej_genomes_nochr/genomes/Homo_sapiens/NCBI/GRCh38/Annotation/GATK_bundle/Sequence/genome.fa.fai")
     report["reference_fai_sha256"] = hashlib.sha256(Path(args.ref + ".fai").read_bytes()).hexdigest()
@@ -249,7 +260,7 @@ def write_nf_config(root, kind, queue):
     if kind == "lineage":
         runtime.mkdir(parents=True, exist_ok=True)
         for script in LINEAGE_SCRIPTS:
-            run(["apptainer", "exec", "-B", "/research_jude:/research_jude", image,
+            run(["apptainer", "exec", "--no-mount", "/programs", "-B", "/research_jude:/research_jude", image,
                  "cp", f"/usr/local/bin/scripts/{script}", runtime / script])
         bindings = " ".join(f"-B {runtime / script}:/usr/local/bin/{script}:ro" for script in LINEAGE_SCRIPTS)
     include = SOURCE / "basej-somatic/conf/local_lsf_apptainer.config"
@@ -307,8 +318,24 @@ process {{
 """
     else:
         content += f"""
+    // SEQUOIA_PHYLOGENY_SNV (and likely its sibling SEQUOIA_*/POSTPROCESS_*
+    // processes, which share this same container) failed once with
+    // "open /dev/null: permission denied" / "Command 'ps' ... cannot be
+    // found" immediately on container startup -- confirmed NOT a
+    // deterministic bug: manually re-ran the exact same apptainer
+    // invocation (same image, same --cleanenv/--no-mount options) on the
+    // same failing compute node moments later and /dev/null + ps both
+    // worked fine. A one-off apptainer/filesystem hiccup, not a logic
+    // error -- but this config's own project-wide `errorStrategy =
+    // 'terminate'` wildcard above has zero retries, so a single transient
+    // blip like this kills the entire multi-hour lineage run. Giving this
+    // first-ever-exercised container's processes a small retry budget
+    // (mirrors the same fix already applied to VARIANT_PREFILTER_TABLE_PERCHR
+    // in the somatic config above, for the same reason).
     withName: /SEQUOIA_.+|POSTPROCESS_.+|GATHER_LINEAGE_.+|CHECK_MATRIX_NON_EMPTY_.+/ {{
         container = '{image}'
+        errorStrategy = 'retry'
+        maxRetries = 2
     }}
 """
     content += "}\n"

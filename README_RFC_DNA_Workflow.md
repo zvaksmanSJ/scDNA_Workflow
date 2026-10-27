@@ -701,8 +701,11 @@ workflow_DNA/
                                      pipeline: step1_*.py .. step7_*.py,
                                      run_all_resolveome.py/.sh,
                                      submit_resolveome_workflow_...py,
-                                     every test_*.py, and this pipeline's
-                                     own logs/
+                                     every test_*.py, this pipeline's own
+                                     logs/, and BASEJ_LINEAGE_REQUIRED_FIXES.md
+                                     (mandatory patches for a freshly-obtained
+                                     copy of the licensed basej-lineage
+                                     component -- see that file)
 
   setup/                         <- every setup/provisioning script, for
                                      BOTH pipelines: setup.sh (WDL's free-
