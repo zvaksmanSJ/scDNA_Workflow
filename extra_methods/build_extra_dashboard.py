@@ -220,6 +220,63 @@ def sv_similarity_section(project_root: Path) -> str:
     return "".join(blocks)
 
 
+def sv_prevalence_histogram(project_root: Path) -> str:
+    """Pure HTML/CSS horizontal bar chart (no new plotting dependency) of
+    how many distinct SV breakpoints were detected in exactly how many
+    cells, bucketed from sv_similarity's own sv_feature_prevalence.tsv
+    (every detected SV site x its SVTYPE and detected_cells count).
+    Dominated by private (single-cell) calls is normal/expected -- most
+    SV calls from single-cell WGA data are private artifacts or
+    cell-specific somatic events; features shared across many cells are
+    the ones worth prioritizing as likely-clonal/lineage-informative."""
+    path = project_root / "sv_similarity" / "sv_feature_prevalence.tsv"
+    if not path.is_file():
+        return "<p class='missing'>Not available.</p>"
+    buckets = [(1, 1, "1 (private)"), (2, 2, "2"), (3, 3, "3"), (4, 4, "4"),
+               (5, 9, "5-9"), (10, 19, "10-19"), (20, 10**9, "20+")]
+    counts = {label: 0 for _, _, label in buckets}
+    svtype_counts: dict[str, int] = {}
+    total = 0
+    with path.open() as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for row in reader:
+            total += 1
+            svtype_counts[row["SVTYPE"]] = svtype_counts.get(row["SVTYPE"], 0) + 1
+            n = int(row["detected_cells"])
+            for low, high, label in buckets:
+                if low <= n <= high:
+                    counts[label] += 1
+                    break
+    if total == 0:
+        return "<p class='missing'>Not available.</p>"
+    max_count = max(counts.values()) or 1
+    bars = []
+    for _, _, label in buckets:
+        count = counts[label]
+        width_pct = 100 * count / max_count
+        bars.append(
+            "<div style='display:flex;align-items:center;gap:8px;margin:2px 0;'>"
+            f"<div style='width:70px;font-size:0.82rem;text-align:right;'>{html.escape(label)}</div>"
+            f"<div style='background:#2c7fb8;height:16px;width:{width_pct:.1f}%;min-width:2px;'></div>"
+            f"<div style='font-size:0.8rem;color:#555;'>{count:,} ({100*count/total:.1f}%)</div>"
+            "</div>"
+        )
+    svtype_table = "".join(
+        f"<tr><td>{html.escape(t)}</td><td>{c:,}</td><td>{100*c/total:.1f}%</td></tr>"
+        for t, c in sorted(svtype_counts.items(), key=lambda kv: -kv[1])
+    )
+    return (
+        f"<p class='section-note'>{total:,} distinct SV breakpoints detected across the cohort "
+        "(Manta, per-cell, before any similarity filtering). \"Detected in N cells\" buckets how "
+        "many of those are private vs. recurrently shared.</p>"
+        "<div style='display:flex;gap:24px;flex-wrap:wrap;'>"
+        f"<div style='flex:2;min-width:360px;'><h4>Detected in how many cells</h4>{''.join(bars)}</div>"
+        "<div style='flex:1;min-width:220px;'><h4>By SV type</h4><table><tr><th>SVTYPE</th>"
+        f"<th>Count</th><th>%</th></tr>{svtype_table}</table></div>"
+        "</div>"
+    )
+
+
 def sv_fusion_provenance_boxes(provenance: dict) -> str:
     """Render sv_gene_fusion_annotation.py's own provenance.json as labeled
     boxes (same visual pattern as the library-QC tab's provenance boxes),
@@ -353,6 +410,7 @@ Generated alongside, not replacing, the official BaseJumper-parity workflow dash
   <button class="tablink" onclick="showTab(event,'tab-loh')">LOH</button>
   <button class="tablink" onclick="showTab(event,'tab-lohregion')">LOH by Region</button>
   <button class="tablink" onclick="showTab(event,'tab-lineage')">Lineage</button>
+  <button class="tablink" onclick="showTab(event,'tab-sv')">Structural Variants</button>
   <button class="tablink" onclick="showTab(event,'tab-svfusion')">SV Gene Fusions</button>
   <button class="tablink" onclick="showTab(event,'tab-mutsig')">Mutational Signatures</button>
 </div>
@@ -554,6 +612,25 @@ similarity clustering, <b>not</b> a rooted phylogenetic inference. Read it as a 
 concordant clustering with the SNV tree above is a stronger signal than either method alone; discordance is
 not automatically evidence against the SNV tree, since this method has its own distinct failure modes.</p>
 $sv_similarity_section
+</div>
+
+<div id="tab-sv" class="tabcontent">
+<h2>Structural variants (Manta, per-cell)</h2>
+<p class="section-note">Raw structural-variant call data from the existing per-cell Manta calling
+(<code>variants_cnv_sv</code> stage) and the <code>sv_similarity</code>/<code>sv_similarity_shared</code>
+stages' own feature tables -- no new upstream caller. This tab is about the SV calls themselves (counts,
+types, how widely shared each is); for the similarity-clustering <i>use</i> of this same data as an
+orthogonal lineage cross-check, see the Lineage tab's "Structural-variant similarity clustering" section
+above (same underlying calls, different analysis/purpose -- not duplicated here); for gene/fusion-identity
+annotation of these same calls, see the SV Gene Fusions tab next to this one.</p>
+<h3>SV prevalence across the cohort</h3>
+$sv_prevalence_histogram
+<h3>Per-cell SV summary</h3>
+<p class="section-note">Per-cell counts of detected SV breakpoints (<code>detected_features</code>), how
+many are private to that cell vs. shared with at least one other cell, the per-type breakdown (Manta's own
+BND/DEL/DUP/INS classes), and each cell's nearest neighbor by SV-sharing Jaccard distance (same metric used
+for the Lineage tab's clustering, surfaced per-cell here for direct inspection).</p>
+$sv_percell_table
 </div>
 
 <div id="tab-svfusion" class="tabcontent">
@@ -864,6 +941,13 @@ def main():
         tree_display="block" if newick else "none",
         newick_json=json.dumps(newick),
         sv_similarity_section=sv_similarity_section(EM.parent),
+        sv_prevalence_histogram=sv_prevalence_histogram(EM.parent),
+        sv_percell_table=table_html(
+            read_tsv(EM.parent / "sv_similarity" / "sample_sv_summary.tsv"),
+            ["sample_id", "detected_features", "private_features", "shared_features",
+             "BND", "DEL", "DUP", "INS", "nearest_cell", "nearest_jaccard_distance"],
+            max_rows=100,
+        ),
         svfusion_status="Complete" if sv_fusion_top_rows else "Pending",
         svfusion_status_class="complete" if sv_fusion_top_rows else "pending",
         svfusion_provenance_boxes=sv_fusion_provenance_boxes(sv_fusion_provenance),
