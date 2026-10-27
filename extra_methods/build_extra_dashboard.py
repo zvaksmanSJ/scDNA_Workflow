@@ -132,6 +132,96 @@ def find_tree_file(lineage_dir: Path, donor_id: str) -> Path | None:
     return matches[0] if matches else None
 
 
+def find_official_basej_lineage_tree(project_root: Path) -> Path | None:
+    """Fallback source for the Lineage tab's tree, used when the standalone
+    lineage_track.py output (find_tree_file(), above) isn't present. When
+    the real, official BaseJumper `source_lineage` Nextflow stage succeeds
+    (run_all_resolveome.py's normal/preferred path -- lineage_track.py is a
+    deliberate standalone approximation used only as a fallback when the
+    official stage can't be run), its real tree lives under
+    basej_lineage/.../secondary_analyses/lineage_artifacts/
+    lineage_artifacts_<cohort>/trees/, named by that pipeline's own
+    --cohort_id (e.g. "somatic_cells"), not this project's --donor-id --
+    so find_tree_file()'s donor-id-based glob never matches it. Prefer the
+    'both' (SNV+indel combined) tree if present, then fall back to snv/indel
+    alone, matching --sequoia_phylogeny_mode snv,indel,both's own priority.
+    """
+    trees_glob = "basej_lineage/workflow_outputs/*/*/secondary_analyses/lineage_artifacts/lineage_artifacts_*/trees"
+    for trees_dir in project_root.glob(trees_glob):
+        for suffix in ("both", "snv", "indel"):
+            matches = list(trees_dir.glob(f"*_{suffix}_tree_with_branch_length_selectedscheme.tree"))
+            if matches:
+                return matches[0]
+    return None
+
+
+def sv_similarity_section(project_root: Path) -> str:
+    """Secondary, orthogonal lineage signal: structural-variant (Manta)
+    sharing clustering, already computed by the existing sv_similarity /
+    sv_similarity_shared stages (step6_sv_similarity.py) -- never previously
+    surfaced in this dashboard at all. This is ADDITIONAL to, and does NOT
+    replace, the primary Sequoia/MPBoot SNV phylogeny tree rendered above:
+    it is average-linkage Jaccard-distance clustering of shared Manta SV
+    breakpoints across cells, not a rooted phylogenetic inference. Two
+    variants are shown, exactly as the pipeline produces them:
+      - "all features": every detected SV breakpoint, including private
+        (single-cell) ones -- more features, more sensitive to per-cell
+        calling noise.
+      - "shared features only" (>=2 supporting cells): restricted to SVs
+        seen in more than one cell -- fewer features, but each one is by
+        definition not a single-cell-only artifact.
+    IMPORTANT CAVEAT (reproduced verbatim from step6_sv_similarity.py's own
+    documented limitation, not new editorializing added here): SV detection
+    sensitivity correlates with per-cell sequencing depth/coverage, so two
+    cells can cluster together because they share similar coverage/calling
+    characteristics rather than because they share true common ancestry.
+    This view should be read as a complementary, exploratory cross-check
+    alongside the primary SNV tree -- concordant clustering across both
+    methods is a stronger signal than either alone; discordance is not
+    automatically evidence against the SNV tree, since this method has its
+    own distinct failure modes.
+    """
+    variants = [
+        ("all SV features (including private, single-cell-only calls)", project_root / "sv_similarity"),
+        ("shared SV features only (>=2 supporting cells)", project_root / "sv_similarity_shared"),
+    ]
+    blocks = []
+    any_present = False
+    for label, directory in variants:
+        dendro = directory / "sv_similarity.dendrogram.png"
+        heatmap = directory / "sv_similarity.distance_heatmap.png"
+        summary_rows = read_tsv(directory / "sample_sv_summary.tsv")
+        report_html = directory / "sv_similarity.report.html"
+        if not (dendro.is_file() or summary_rows):
+            blocks.append(f"<h4>{html.escape(label)}</h4><p class='missing'>Not available "
+                           "(no SV features met the detection/prevalence threshold for this cohort).</p>")
+            continue
+        any_present = True
+        report_link = (
+            f"<p class='section-note'>Full interactive report: "
+            f"<a href='../{directory.name}/sv_similarity.report.html' target='_blank'>"
+            f"{html.escape(directory.name)}/sv_similarity.report.html</a></p>"
+            if report_html.is_file() else ""
+        )
+        blocks.append(
+            f"<h4>{html.escape(label)}</h4>"
+            "<div style='display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;'>"
+            f"<div style='flex:1;min-width:320px;'>{img_tag(dendro, f'{label} -- dendrogram')}</div>"
+            f"<div style='flex:1;min-width:320px;'>{img_tag(heatmap, f'{label} -- pairwise distance heatmap')}</div>"
+            "</div>"
+            + report_link
+            + table_html(summary_rows, ["sample_id", "detected_features", "private_features",
+                                        "shared_features", "nearest_cell", "nearest_jaccard_distance"],
+                         max_rows=50)
+        )
+    if not any_present:
+        return "<p class='missing'>Not available (sv_similarity / sv_similarity_shared stages did not " \
+               "detect enough SV features in this cohort to cluster).</p>"
+    return "".join(blocks)
+
+
+
+
 METHODS_COMPARISON_ROWS = [
     ("Alignment", "Sentieon bwa mem (licensed) or BWA-MEM2 open-source fallback", "BWA-MEM2 (open source; no Sentieon license available)", "BWA-MEM2 (unchanged)", "Sentieon (licensed BWA-MEM reimplementation)"),
     ("Post-alignment processing", "Sentieon LocusCollector/Dedup (or samtools markdup fallback for BWA-MEM2 path)", "samtools fixmate/markdup only", "samtools fixmate/markdup only (unchanged)", "Sentieon Dedup + Realigner (indel realignment) + QualCal (BQSR)"),
@@ -362,9 +452,7 @@ $loh_region_table
 
 <div id="tab-lineage" class="tabcontent">
 <h2>Cell lineage <span class="status-badge status-$lineage_status_class">$lineage_status</span></h2>
-<p class="section-note">Reconstructed via Sequoia (same tool used by the official BaseJumper lineage pipeline),
-run directly on this cohort's own merged DeepVariant calls rather than waiting for the full
-somatic-filtering-&gt;integrated-matrices-&gt;lineage Nextflow chain.</p>
+<p class="section-note">$lineage_method_note</p>
 <div id="tree-svg-container">
   <p class="missing" id="tree-missing-msg">$tree_missing_msg</p>
   <svg id="tree-svg" width="900" height="500" style="display:$tree_display"></svg>
@@ -380,6 +468,18 @@ present in the Sequoia container, so no new package was installed.</p>
 $verification_summary_html
 <h4>Per-branch bootstrap support (primary tree)</h4>
 $bootstrap_table
+
+<h3>Structural-variant similarity clustering (orthogonal cross-check)</h3>
+<p class="section-note">Additional, independent lineage-adjacent signal -- does <b>not</b> replace the
+primary Sequoia/MPBoot SNV tree above. Average-linkage hierarchical clustering on the Jaccard distance
+between cells' shared Manta structural-variant (SV) breakpoints (already computed by the
+<code>sv_similarity</code>/<code>sv_similarity_shared</code> stages). <b>Important caveat:</b> SV detection
+sensitivity correlates with per-cell sequencing depth/coverage, so two cells can cluster together because
+they share similar coverage/calling characteristics rather than true common ancestry -- this is exploratory
+similarity clustering, <b>not</b> a rooted phylogenetic inference. Read it as a complementary cross-check:
+concordant clustering with the SNV tree above is a stronger signal than either method alone; discordance is
+not automatically evidence against the SNV tree, since this method has its own distinct failure modes.</p>
+$sv_similarity_section
 </div>
 
 <div id="tab-mutsig" class="tabcontent">
@@ -533,7 +633,22 @@ def main():
 
     lineage_dir = EM / "lineage"
     tree_file = find_tree_file(lineage_dir, args.donor_id)
+    tree_is_official = False
+    if tree_file is None:
+        tree_file = find_official_basej_lineage_tree(EM.parent)
+        tree_is_official = tree_file is not None
     newick = tree_file.read_text().strip() if tree_file else None
+    lineage_method_note = (
+        "Reconstructed by the official BaseJumper <code>source_lineage</code> Nextflow "
+        "pipeline (Sequoia + MPBoot), run on the full somatic-filtering-&gt;"
+        "integrated-matrices-&gt;lineage chain -- the same production path BaseJumper "
+        "itself uses, not an approximation."
+        if tree_is_official else
+        "Reconstructed via Sequoia (same tool used by the official BaseJumper lineage "
+        "pipeline), run directly on this cohort's own merged DeepVariant calls rather "
+        "than waiting for the full somatic-filtering-&gt;integrated-matrices-&gt;lineage "
+        "Nextflow chain."
+    )
 
     methods_rows_html = "".join(
         f"<tr><td>{stage}</td><td>{basejumper}</td><td>{our_prev}</td><td>{our_new}</td><td>{paper}</td></tr>\n"
@@ -562,7 +677,17 @@ def main():
             "</ul>"
         )
     else:
-        verification_summary_html = "<p class='missing'>Not yet available.</p>"
+        verification_summary_html = (
+            "<p class='missing'>Not applicable: this tree is the official BaseJumper "
+            "<code>source_lineage</code> pipeline's own output. That pipeline does not "
+            "perform an independent resample/bootstrap-concordance check the way this "
+            "project's standalone <code>lineage_track.py</code>/<code>verify_lineage.py</code> "
+            "scripts do (used only when the official pipeline itself can't be run); its own "
+            "per-branch bootstrap support (from MPBoot) is reported directly in the tree "
+            "file instead.</p>"
+            if tree_is_official else
+            "<p class='missing'>Not yet available.</p>"
+        )
 
     bootstrap_threshold = (
         verification_summary.get("bootstrap_threshold", 70) if verification_summary else 70
@@ -610,9 +735,11 @@ def main():
         bootstrap_table=table_html(bootstrap_rows, ["internal_node_index", "bootstrap_support", "low_confidence"]),
         lineage_status="Complete" if newick else "Pending",
         lineage_status_class="complete" if newick else "pending",
+        lineage_method_note=lineage_method_note,
         tree_missing_msg="" if newick else "Tree not yet available \u2014 lineage reconstruction is still running.",
         tree_display="block" if newick else "none",
         newick_json=json.dumps(newick),
+        sv_similarity_section=sv_similarity_section(EM.parent),
         mutsig_spectrum_fig=img_tag(EM / "mutational_signatures" / "mutation_spectrum_96.png",
                                      "96-trinucleotide-context mutation spectrum"),
         mutsig_barplot_fig=img_tag(EM / "mutational_signatures" / "signature_contribution_barplot.png",
