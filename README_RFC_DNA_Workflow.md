@@ -246,6 +246,27 @@ Beyond the original v2.0.0 scope, this workflow adds (under
   explicitly rather than crashing or silently showing a wrong number (a
   real bug found and fixed this session: `build_extra_dashboard.py` used to
   crash formatting a `None` branch-score distance as a float).
+- **SV gene-fusion annotation** (`sv_gene_fusion_annotation.py`): intersects
+  the SAME Manta structural-variant calls already produced by the
+  `variants_cnv_sv` stage (`sv_features.tsv`/`sv_binary.tsv`) against a gene
+  model -- no new SV caller, no re-calling. Each BND (translocation-type)
+  event's two breakpoints are checked, gene-pair by gene-pair, against a
+  WHITELIST of known cancer-associated gene fusions (default: the Mitelman
+  Database of Chromosome Aberrations and Gene Fusions in Cancer, via
+  Arriba's MIT-licensed redistribution) and a BLACKLIST of gene pairs
+  recurrently reported as fusion transcripts in normal, non-cancer tissue
+  (default: Babiceanu et al. 2016 + Greger et al. 2014) -- both pluggable
+  via config for a custom additional list without replacing the defaults
+  (see `extra_methods/refs/sv_gene_fusion/README.md` for full citations/
+  licensing). DEL/DUP events are separately annotated with every gene their
+  span overlaps; no whitelist/blacklist check applies to non-BND SV types
+  (both reference lists are RNA-fusion-transcript evidence, which only a
+  translocation/breakend can plausibly produce -- documented in the
+  script's own docstring). Produces a full annotated table (every SV), a
+  filtered "main" table (gene-overlapping, recurrent SVs), a ranked top-50
+  table with a plain-English explanation per row, and an OncoScan-style
+  figure (chromosome schematic + per-cell presence strip) for the
+  highest-ranked subset of those.
 - **Additional QC metrics**: MAPD (Median Absolute Pairwise Difference, a
   per-cell CNV noise/uniformity metric from CNVkit's own bins), an FDR
   estimate for the small-variant calls, and a recurrent-artifact panel that
@@ -259,10 +280,14 @@ Beyond the original v2.0.0 scope, this workflow adds (under
   not independently called here), documented as a caveat alongside the
   results rather than presented as a definitive private-mutation call set.
 - **A consolidated tabbed dashboard** (`build_extra_dashboard.py`) with tabs
-  for Overview, QC (embedding the real MultiQC report), Phasing, LOH,
-  LOH-by-Region, Lineage, and Mutational Signatures -- the single entry
-  point for reviewing every result above alongside the original pipeline's
-  own outputs.
+  for Overview, QC (embedding the real MultiQC report), Library QC
+  (embedding `step2_library_qc_dashboard.py`'s own standalone informational
+  comparison against the licensed source pipeline's five pass/fail
+  thresholds, with the rationale for each threshold and, per cell, why any
+  FAIL/UNKNOWN call was made), Phasing, CNV, LOH, LOH-by-Region, Lineage, SV
+  Gene Fusions, and Mutational Signatures -- the single entry point for
+  reviewing every result above alongside the original pipeline's own
+  outputs.
 - **A browsable final-results folder** (`organize_final_results.py`),
   non-destructive and symlink-based, that lays out every component's output
   under `DNA_results/final/` for easy review without duplicating data.
@@ -701,11 +726,8 @@ workflow_DNA/
                                      pipeline: step1_*.py .. step7_*.py,
                                      run_all_resolveome.py/.sh,
                                      submit_resolveome_workflow_...py,
-                                     every test_*.py, this pipeline's own
-                                     logs/, and BASEJ_LINEAGE_REQUIRED_FIXES.md
-                                     (mandatory patches for a freshly-obtained
-                                     copy of the licensed basej-lineage
-                                     component -- see that file)
+                                     every test_*.py, and this pipeline's
+                                     own logs/
 
   setup/                         <- every setup/provisioning script, for
                                      BOTH pipelines: setup.sh (WDL's free-

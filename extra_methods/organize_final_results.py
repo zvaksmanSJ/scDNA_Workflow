@@ -75,6 +75,8 @@ def main():
     relink(comp / "lineage_verification", EM / "lineage_verification")
     relink(comp / "mutational_signatures", EM / "mutational_signatures")
     relink(comp / "qc_summary.tsv", EM / "qc_summary.tsv")
+    relink(comp / "sv_gene_fusion", EM / "sv_gene_fusion")
+    relink(comp / "library_qc_dashboard", D / "qc" / "library_dashboard")
 
     print(f"\n[OK] Final-results tree refreshed under {F}")
 

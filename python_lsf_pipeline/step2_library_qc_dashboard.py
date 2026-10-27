@@ -58,71 +58,6 @@ RULES = {
     "MAPD_CNV_Log2": ("cutoff_cnv_mapd", "<"),
     "SKEW_CNV": ("cutoff_cnv_sk", "<"),
 }
-# Plain-language rationale for each of BASEJ-DNA-QC's own 5 source cutoffs
-# (numeric values come verbatim from that pipeline's assets/plot_qc_config.json
-# -- see DEFAULT_CONFIG above -- not re-derived or re-validated by this
-# project). BASEJ-DNA-QC's own README describes its purpose: triage
-# *low-pass* (~2M read) libraries before committing them to expensive
-# high-depth sequencing, which is the context these specific numeric
-# thresholds were calibrated for. This project's own real cohort run
-# compares the full high-depth data against those same thresholds purely
-# informationally (see the "Source checks are informational" note below),
-# not as a cell-calling decision. Each entry is
-# (what_it_measures, why_a_threshold_matters_here).
-CUTOFF_RATIONALE = {
-    "preseq_count": (
-        "Predicted number of distinct (non-duplicate) template molecules in the library, "
-        "extrapolated by preseq's own duplicate-saturation model from the observed data to a "
-        "fixed target sequencing depth.",
-        "Single-cell whole-genome amplification (PTA/MDA) inherently produces uneven, "
-        "non-random coverage; a library with too few truly distinct template molecules will "
-        "saturate early -- most additional reads at higher sequencing depth would just be "
-        "duplicates of molecules already sampled, not new genomic coverage. The cutoff is the "
-        "bar for \"this library has enough distinct molecules that deep sequencing would still "
-        "be adding new information, not just redundant duplicate reads.\"",
-    ),
-    "PCT_CHIMERAS": (
-        "Fraction of Picard-aligned read pairs classified as chimeric (e.g. mapping to "
-        "different chromosomes, or in an orientation inconsistent with a normal insert).",
-        "In single-cell whole-genome amplification, a high chimeric-read rate is a well-known "
-        "signature of amplification artifacts (template switching / concatemer formation during "
-        "the amplification reaction) rather than true structural rearrangements at this "
-        "prevalence. A high rate signals a lower-quality amplification reaction for that "
-        "specific cell, which degrades both SV-calling reliability and general data usability.",
-    ),
-    "chrM": (
-        "Mitochondrial genome's share of total interval-depth coverage (summed depth over "
-        "chrM/MT target intervals, divided by summed depth over all target intervals) -- a "
-        "depth-based ratio, not a mapped-read-count fraction.",
-        "Mitochondrial DNA exists at very high copy number relative to the nuclear genome in "
-        "every cell. In a technically sound single-cell amplification, nuclear-genome coverage "
-        "should still dominate; an excessive chrM share indicates the amplification reaction "
-        "preferentially amplified the abundant, easily-accessible mitochondrial genome instead "
-        "of the nuclear genome -- leaving correspondingly less usable nuclear-genome data within "
-        "a fixed sequencing budget.",
-    ),
-    "MAPD_CNV_Log2": (
-        "Median Absolute Pairwise Difference between log2 copy-number ratios of adjacent "
-        "genomic bins (from the source pipeline's own Ginkgo-based CNV calling) -- a standard "
-        "measure of how noisy/uneven the copy-number profile is.",
-        "Single-cell whole-genome amplification always introduces some coverage unevenness "
-        "(that unevenness is precisely why single-cell CNV calling is hard in general), but "
-        "above a certain noise floor the true copy-number signal is overwhelmed, making segment "
-        "calls unreliable in either direction (spurious calls or missed true events). The cutoff "
-        "is the bar for \"amplification evenness good enough that CNV calls can be trusted.\"",
-    ),
-    "SKEW_CNV": (
-        "Skewness of the per-cell copy-number log2-ratio distribution (same Ginkgo-based CNV "
-        "calling as MAPD, above) -- how asymmetric that distribution is around its dominant, "
-        "presumed-diploid baseline.",
-        "A well-amplified, mostly-diploid genome should show a roughly symmetric log2-ratio "
-        "distribution around zero. High skew indicates a systematic, directional amplification "
-        "bias (e.g. GC-content bias or strand-specific over/under-representation common to some "
-        "whole-genome-amplification chemistries) rather than a simple increase in random noise "
-        "-- a different failure mode from MAPD, so it is tracked as its own separate check.",
-    ),
-}
-
 GATE_FIELDS = (
     "sample_id", "total_reads", "mapped_reads", "properly_paired",
     "map_rate", "proper_pair_rate", "pass_qc",
@@ -477,6 +412,25 @@ def collect_cell(root, sid, gate, config, extra):
             row[key + "_reason"] = ""
     states, score, status, known, passed = source_scores(row, config)
     row.update({key + "_source_check": value for key, value in states.items()})
+    # Populate a reason for FAILs too (previously only UNKNOWN/unavailable
+    # metrics got a _reason; a metric that was successfully measured but
+    # simply failed the source's pass/fail threshold left this column
+    # blank, with no way to tell from the dashboard *why* it failed without
+    # separately looking up the cutoff and doing the arithmetic by hand).
+    # Does not touch the reason already set for UNKNOWN (value is None)
+    # metrics above, or PASS metrics (left blank; a passing metric needs no
+    # further explanation, matching the established convention).
+    for metric, (cutoff_key, operator) in RULES.items():
+        if states[metric] != "FAIL":
+            continue
+        cutoff_value = config[cutoff_key]
+        observed = row[metric]
+        comparison = "is not greater than" if operator == ">" else "is not less than"
+        margin = abs(observed - cutoff_value)
+        row[metric + "_reason"] = (
+            f"FAIL: observed {observed:.4g} {comparison} "
+            f"the source pass threshold ({operator} {cutoff_value:.4g}); off by {margin:.4g}."
+        )
     row.update(source_composite_score=score, source_qc_informational_status=status,
                source_components_known=known, source_components_passed=passed)
     return row
@@ -537,77 +491,87 @@ def plot_embedded(rows, metric, cutoff=None, operator=None):
 
 
 def cutoff_rationale_html(config):
-    """Render CUTOFF_RATIONALE as one labeled box per metric, showing the
-    metric's actual configured cutoff value/operator alongside the plain-
-    language explanation of what it measures and why a threshold matters."""
-    cards = []
-    for metric, (cutoff_key, operator) in RULES.items():
-        measures, why = CUTOFF_RATIONALE[metric]
-        cutoff_value = config[cutoff_key]
-        cards.append(
-            "<div class='rationale-box'>"
-            f"<h4>{html.escape(metric)} &mdash; pass requires <code>{html.escape(operator)} "
-            f"{cutoff_value:g}</code></h4>"
-            f"<p><b>What it measures:</b> {html.escape(measures)}</p>"
-            f"<p><b>Why this threshold:</b> {html.escape(why)}</p>"
+    """Plain-language rationale for each of the 5 source pass/fail cutoffs.
+    IMPORTANT, HONEST CAVEAT: these cutoff VALUES come verbatim from the
+    licensed source pipeline's own config file (basej-dnaqc/assets/
+    plot_qc_config.json) -- no written justification for the exact numbers
+    chosen was found anywhere in that vendored pipeline. The explanations
+    below are this project's own technical reasoning for why a cutoff in
+    that general range is a defensible, standard choice for each metric
+    (grounded in general single-cell/WGA sequencing QC practice), NOT a
+    citation to a documented source rationale -- there isn't one to cite.
+    If the source project ever publishes its own justification, replace
+    this function's text with that instead."""
+    return f"""
+<div class="cutoff-rationale">
+<h3>Why these cutoffs (informational, not a cited source rationale)</h3>
+<p class="section-note">The five cutoff <b>values</b> below are taken verbatim from the licensed source
+pipeline's own <code>plot_qc_config.json</code>; this project found no written justification for the exact
+numbers anywhere in that vendored pipeline. The reasoning that follows is this project's own technical
+explanation for why a threshold in that range is a reasonable, standard choice for each metric -- clearly
+labeled as such, not a citation.</p>
+<table>
+<thead><tr><th>Metric</th><th>Configured cutoff</th><th>What it measures</th><th>Why a threshold in this range is reasonable</th></tr></thead>
+<tbody>
+<tr><td>preseq_count</td><td>&gt; {config['cutoff_preseq']:,.0f}</td>
+<td>Preseq's extrapolated library complexity: the number of <i>distinct</i> molecules the library would
+yield at very deep sequencing, i.e. how much real genomic material is actually present versus PCR/WGA
+duplicate copies of the same few fragments.</td>
+<td>Below a few billion distinct fragments, a single-cell WGA library is complexity-limited: sequencing
+deeper mostly re-samples the same molecules (more duplicates, not more unique genome coverage), directly
+capping how much of the genome can ever be called confidently. A multi-billion-fragment floor is a standard
+order-of-magnitude bar for "this library still has enough real material left to be worth deep sequencing."</td></tr>
+<tr><td>PCT_CHIMERAS</td><td>&lt; {config['cutoff_chimeras']:.2f} ({config['cutoff_chimeras']*100:.0f}%)</td>
+<td>Fraction of aligned read pairs Picard flags as chimeric (the two mates, or supplementary alignments,
+map to unexpectedly different/distant locations).</td>
+<td>A high chimeric-read rate is a classic signature of WGA chimera artifacts (MDA/PTA amplification can
+stitch together fragments from unrelated genomic locations) or library-prep/ligation artifacts, not a
+sequencing-depth problem -- a <20% bar is a conventional "this is still mostly real pairs, not amplification
+noise" threshold.</td></tr>
+<tr><td>chrM</td><td>&lt; {config['cutoff_chrM']:.2f} ({config['cutoff_chrM']*100:.0f}%)</td>
+<td>Mitochondrial genome's share of total interval sequencing depth.</td>
+<td>Each cell carries hundreds-to-thousands of mtDNA copies versus 2 copies of nuclear DNA, so even a
+small fraction of chrM-originating reads can consume a disproportionate share of sequencing depth that
+would otherwise go to the nuclear genome being studied; a <20% cap keeps mitochondrial reads from crowding
+out nuclear coverage in a single-cell WGS library.</td></tr>
+<tr><td>MAPD_CNV_Log2</td><td>&lt; {config['cutoff_cnv_mapd']:.2f}</td>
+<td>Median Absolute Pairwise Difference of log2 bin ratios across the genome -- Ginkgo/CNV calling's
+standard bin-to-bin noise metric.</td>
+<td>MAPD is the field-standard way to quantify how noisy a single-cell copy-number profile is; above
+roughly this range, bin-to-bin noise starts to approach the magnitude of a true single-copy-number change,
+making CNV calls unreliable -- thresholds in the 0.2-0.3 range are widely used in single-cell CNV literature
+for exactly this reason.</td></tr>
+<tr><td>SKEW_CNV</td><td>&lt; {config['cutoff_cnv_sk']:.2f}</td>
+<td>Systematic trend/skew in the bin-ratio profile (e.g. a GC-content-correlated or chromosome-position-
+correlated drift), separate from MAPD's local bin-to-bin noise.</td>
+<td>Skew captures a different failure mode than MAPD -- a smooth systematic bias (not random noise) that
+can masquerade as a broad gain/loss; keeping it in the same general range as MAPD is standard practice so
+neither local noise nor systematic drift alone can push a genuinely flat profile into looking like a real
+CNV call.</td></tr>
+</tbody>
+</table>
+</div>
+"""
+
+
+def provenance_boxes_html(provenance):
+    """Render the provenance dict as individual labeled boxes instead of one
+    undifferentiated JSON dump -- same information, easier to scan."""
+    boxes = []
+    for key, value in provenance.items():
+        if isinstance(value, dict):
+            body = "<br>".join(f"<b>{html.escape(str(k))}:</b> {html.escape(str(v))}" for k, v in value.items())
+        elif isinstance(value, list):
+            body = "<br>".join(html.escape(str(item)) for item in value) if value else "<i>(none)</i>"
+        else:
+            body = html.escape(str(value))
+        boxes.append(
+            "<div class='prov-box'>"
+            f"<div class='prov-box-title'>{html.escape(key)}</div>"
+            f"<div class='prov-box-body'>{body}</div>"
             "</div>"
         )
-    return "<div class='rationale-grid'>" + "".join(cards) + "</div>"
-
-
-def json_value_html(value, level=0):
-    """Render an arbitrary JSON-ish value (from the provenance dict) as HTML,
-    recursing into nested dicts/lists as their own nested boxes/lists instead
-    of a single flat <pre> dump."""
-    if isinstance(value, dict):
-        return json_boxes_html(value, level=level + 1)
-    if isinstance(value, list):
-        if not value:
-            return "<i>(empty)</i>"
-        return "<ul class='json-list'>" + "".join(
-            f"<li>{json_value_html(item, level=level)}</li>" for item in value) + "</ul>"
-    return f"<code>{html.escape(str(value))}</code>"
-
-
-def json_boxes_html(data, level=0):
-    """Render a dict (e.g. this report's own provenance metadata) as one
-    labeled box per top-level key, instead of a single raw indented
-    json.dumps(...) blob in a <pre> tag -- same information, easier to scan."""
-    cards = []
-    css_class = "json-box" if level == 0 else "json-subbox"
-    for key, value in data.items():
-        cards.append(
-            f"<div class='{css_class}'>"
-            f"<div class='json-key'>{html.escape(str(key))}</div>"
-            f"<div class='json-value'>{json_value_html(value, level=level)}</div>"
-            "</div>"
-        )
-    wrapper_class = "json-grid" if level == 0 else "json-subgrid"
-    return f"<div class='{wrapper_class}'>" + "".join(cards) + "</div>"
-
-
-def metric_failure_explanation(row, metric, cutoff_value, operator):
-    """For the 'Cell checks and unavailable-metric reasons' table: explain
-    WHY a cell failed a specific metric, not just that it did. Two distinct
-    failure modes exist and need different wording:
-      - UNKNOWN: the metric itself could not be computed for this cell; its
-        existing *_reason field (already captured upstream, e.g. "preseq
-        model fit failed") already explains why -- just surface it.
-      - FAIL: the metric WAS computed, but the actual value did not satisfy
-        the cutoff -- this previously rendered as a blank reason cell, since
-        *_reason is only populated for the UNKNOWN case. Synthesize an
-        explicit "value vs cutoff" sentence instead so a FAIL is never
-        silently unexplained."""
-    check = row.get(metric + "_source_check")
-    value = row.get(metric)
-    existing_reason = row.get(metric + "_reason") or ""
-    if check == "FAIL" and value is not None:
-        direction = "below" if operator == ">" else "above"
-        return (f"FAIL: value {value:g} is {direction} the required "
-                f"{'minimum' if operator == '>' else 'maximum'} ({operator} {cutoff_value:g}).")
-    if existing_reason:
-        return existing_reason
-    return ""
+    return "<div class='prov-grid'>" + "".join(boxes) + "</div>"
 
 
 def render_dashboard(path, rows, config, provenance):
@@ -627,34 +591,21 @@ def render_dashboard(path, rows, config, provenance):
         columns.extend([metric, metric + "_source_check", metric + "_reason"])
     table = "<tr>" + "".join(f"<th>{html.escape(key)}</th>" for key in columns) + "</tr>"
     for row in rows:
-        cells = []
-        for key in columns:
-            if key.endswith("_reason") and key[:-len("_reason")] in RULES:
-                metric = key[:-len("_reason")]
-                cutoff_key, operator = RULES[metric]
-                value = metric_failure_explanation(row, metric, config[cutoff_key], operator)
-            else:
-                value = row.get(key)
-            cells.append(f"<td>{html.escape(str(value if value is not None else 'NA'))}</td>")
-        table += "<tr>" + "".join(cells) + "</tr>"
+        table += "<tr>" + "".join(
+            f"<td>{html.escape(str(row.get(key) if row.get(key) is not None else 'NA'))}</td>"
+            for key in columns) + "</tr>"
     path.write_text(
         "<!doctype html><html><head><meta charset='utf-8'><title>CUSTOM library QC</title>"
         "<style>body{font:14px sans-serif;margin:2em}img{max-width:49%}"
         "td,th{border:1px solid #ccc;padding:4px}table{border-collapse:collapse}"
         ".scroll{overflow:auto}"
-        ".rationale-grid{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0 20px}"
-        ".rationale-box{flex:1 1 320px;max-width:420px;border:1px solid #c7d2d8;border-radius:8px;"
-        "background:#f7fafc;padding:10px 14px}"
-        ".rationale-box h4{margin:0 0 6px}.rationale-box p{margin:4px 0;font-size:0.88rem}"
-        ".json-grid,.json-subgrid{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0}"
-        ".json-box{flex:1 1 260px;max-width:420px;border:1px solid #d7dde2;border-radius:6px;"
-        "background:#fbfcfd;padding:8px 12px}"
-        ".json-subbox{border:1px solid #e3e7ea;border-radius:5px;background:#fff;padding:6px 10px;"
-        "margin:4px 0;min-width:220px}"
-        ".json-key{font-weight:bold;font-size:0.82rem;color:#2c3e50;margin-bottom:2px}"
-        ".json-value{font-size:0.82rem;word-break:break-word}"
-        ".json-value code{font-size:0.8rem}"
-        ".json-list{margin:2px 0;padding-left:18px}"
+        ".cutoff-rationale{background:#fbfbfb;border:1px solid #ddd;border-radius:6px;padding:0.8rem 1rem;margin:1rem 0}"
+        ".section-note{color:#555;font-size:0.9rem}"
+        ".prov-grid{display:flex;flex-wrap:wrap;gap:10px;margin:0.5rem 0 1.5rem 0}"
+        ".prov-box{background:#f4f6f8;border:1px solid #ccd3d9;border-radius:6px;padding:8px 12px;"
+        "min-width:220px;max-width:420px;font-size:0.82rem}"
+        ".prov-box-title{font-weight:bold;color:#2c3e50;margin-bottom:4px;word-break:break-word}"
+        ".prov-box-body{color:#333;word-break:break-word}"
         "</style></head><body><h1>CUSTOM library QC comparison</h1>"
         "<p>The flagstat read/mapping/proper-pair gate is retained verbatim from the cell-QC "
         "manifest. If its producer now uses a deduplicated BAM, read counts differ from the "
@@ -673,23 +624,15 @@ def render_dashboard(path, rows, config, provenance):
         "Picard here is post-dedup BAM QC. Denominators/stages differ; do not interpret "
         "their difference as sample failure. This is a custom comparison, not the original "
         "source CNV/clustering dashboard. FastQC is aggregated by MultiQC, not inferred from fastp.</p>"
-        "<h2>Why these cutoffs</h2>"
-        "<p>Numeric cutoff values are BASEJ-DNA-QC's own source thresholds (verbatim from its "
-        "plot_qc_config.json, recorded in this report's Provenance below), calibrated for that "
-        "pipeline's own stated purpose: triaging <i>low-pass</i> (~2M read) libraries before "
-        "committing them to expensive high-depth sequencing. This report applies those same "
-        "thresholds informationally to this cohort's full high-depth data, not as a re-derivation "
-        "or re-validation of the numbers themselves.</p>"
         + cutoff_rationale_html(config)
-        + "".join(figures) + "<h2>Cell checks and unavailable-metric reasons</h2>"
-        "<p class='scroll-note'>The three <code>*_reason</code> columns below explain every "
-        "non-PASS cell/metric combination: for a cell whose metric could not be computed at all "
-        "(status UNKNOWN), the existing upstream reason text is shown (e.g. a failed preseq "
-        "model fit); for a cell whose metric WAS computed but FAILED the cutoff, the actual "
-        "value is shown against the required cutoff so the failure is never left unexplained.</p>"
+        + "".join(figures)
+        + "<h2>Cell checks and unavailable-metric reasons</h2>"
+        "<p class='section-note'>For each of the 5 source-threshold metrics: PASS/FAIL/UNKNOWN plus a "
+        "<code>_reason</code> column explaining why -- for FAIL, the observed value, the cutoff it missed, "
+        "and by how much; for UNKNOWN, why the metric could not be computed at all.</p>"
         "<div class='scroll'><table>"
         + table + "</table></div><h2>Provenance</h2>"
-        + json_boxes_html(provenance) + "</body></html>"
+        + provenance_boxes_html(provenance) + "</body></html>"
     )
 
 

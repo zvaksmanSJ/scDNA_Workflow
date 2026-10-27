@@ -499,10 +499,17 @@ def commands(args):
         "mutational_signatures": ["conda", "run", "-n", "mutsig", "Rscript",
                                  str(EXTRA / "mutational_signatures.R"),
                                  str(em / "artifact_panel_sites.tsv"), str(em / "mutational_signatures")],
+        "sv_gene_annotation": extra_stage("sv_gene_fusion_annotation.py",
+                                         "--sv-matrix-dir", root / "somatic_inputs/structural_variants",
+                                         "--manifest", passed,
+                                         "--chrom-sizes", Path(str(args.ref) + ".fai"),
+                                         "--output-dir", em / "sv_gene_fusion"),
         "build_extra_dashboard": extra_stage("build_extra_dashboard.py",
                                             "--extra-methods-dir", em,
                                             "--donor-id", root.name,
                                             "--multiqc-relpath", "../multiqc_step3/multiqc_report.html",
+                                            "--library-qc-relpath",
+                                            "../qc/library_dashboard/source_threshold_dashboard.html",
                                             "--output", em / "extra_dashboard.html"),
         "organize_final_results": extra_stage("organize_final_results.py",
                                              "--dna-results-dir", root, "--final-dir", root / "final"),
@@ -937,6 +944,11 @@ def perform(args):
             stage(name, sv_analysis, tolerant=True)
         elif state.get(name, {}).get("status") not in ("DONE",):
             not_computable(name, root / name, "somatic_inputs did not complete; cannot assess SV similarity")
+    if somatic_inputs_ok:
+        stage("sv_gene_annotation", lambda: run(cmd["sv_gene_annotation"]), tolerant=True)
+    elif state.get("sv_gene_annotation", {}).get("status") not in ("DONE",):
+        not_computable("sv_gene_annotation", em / "sv_gene_fusion",
+                       "somatic_inputs did not complete; cannot annotate SV gene fusions")
     stage("final_dashboard", lambda: final_dashboard(root, state))
     # Symlink-based navigation tree over everything above; safe to attempt
     # even if some upstream stages are only partially complete (relink()

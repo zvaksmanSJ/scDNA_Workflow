@@ -220,62 +220,59 @@ def sv_similarity_section(project_root: Path) -> str:
     return "".join(blocks)
 
 
-def sv_prevalence_histogram(project_root: Path) -> str:
-    """Pure HTML/CSS horizontal bar chart (no new plotting dependency) of
-    how many distinct SV breakpoints were detected in exactly how many
-    cells, bucketed from sv_similarity's own sv_feature_prevalence.tsv
-    (every detected SV site x its SVTYPE and detected_cells count).
-    Dominated by private (single-cell) calls is normal/expected -- most
-    SV calls from single-cell WGA data are private artifacts or
-    cell-specific somatic events; features shared across many cells are
-    the ones worth prioritizing as likely-clonal/lineage-informative."""
-    path = project_root / "sv_similarity" / "sv_feature_prevalence.tsv"
-    if not path.is_file():
-        return "<p class='missing'>Not available.</p>"
-    buckets = [(1, 1, "1 (private)"), (2, 2, "2"), (3, 3, "3"), (4, 4, "4"),
-               (5, 9, "5-9"), (10, 19, "10-19"), (20, 10**9, "20+")]
-    counts = {label: 0 for _, _, label in buckets}
-    svtype_counts: dict[str, int] = {}
-    total = 0
-    with path.open() as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        for row in reader:
-            total += 1
-            svtype_counts[row["SVTYPE"]] = svtype_counts.get(row["SVTYPE"], 0) + 1
-            n = int(row["detected_cells"])
-            for low, high, label in buckets:
-                if low <= n <= high:
-                    counts[label] += 1
-                    break
-    if total == 0:
-        return "<p class='missing'>Not available.</p>"
-    max_count = max(counts.values()) or 1
-    bars = []
-    for _, _, label in buckets:
-        count = counts[label]
-        width_pct = 100 * count / max_count
-        bars.append(
-            "<div style='display:flex;align-items:center;gap:8px;margin:2px 0;'>"
-            f"<div style='width:70px;font-size:0.82rem;text-align:right;'>{html.escape(label)}</div>"
-            f"<div style='background:#2c7fb8;height:16px;width:{width_pct:.1f}%;min-width:2px;'></div>"
-            f"<div style='font-size:0.8rem;color:#555;'>{count:,} ({100*count/total:.1f}%)</div>"
-            "</div>"
-        )
-    svtype_table = "".join(
-        f"<tr><td>{html.escape(t)}</td><td>{c:,}</td><td>{100*c/total:.1f}%</td></tr>"
-        for t, c in sorted(svtype_counts.items(), key=lambda kv: -kv[1])
-    )
-    return (
-        f"<p class='section-note'>{total:,} distinct SV breakpoints detected across the cohort "
-        "(Manta, per-cell, before any similarity filtering). \"Detected in N cells\" buckets how "
-        "many of those are private vs. recurrently shared.</p>"
-        "<div style='display:flex;gap:24px;flex-wrap:wrap;'>"
-        f"<div style='flex:2;min-width:360px;'><h4>Detected in how many cells</h4>{''.join(bars)}</div>"
-        "<div style='flex:1;min-width:220px;'><h4>By SV type</h4><table><tr><th>SVTYPE</th>"
-        f"<th>Count</th><th>%</th></tr>{svtype_table}</table></div>"
-        "</div>"
-    )
+def sv_fusion_provenance_boxes(provenance: dict) -> str:
+    """Render sv_gene_fusion_annotation.py's own provenance.json as labeled
+    boxes (same visual pattern as the library-QC tab's provenance boxes),
+    so it's clear at a glance exactly which whitelist/blacklist file(s)
+    this run actually used -- bundled default(s), any user-supplied
+    custom additional file(s), and how many pairs each contributed."""
+    if not provenance:
+        return "<p class='missing'>Not yet available.</p>"
+    boxes = []
+    for key in ("whitelist", "blacklist"):
+        value = provenance.get(key)
+        if not isinstance(value, dict):
+            continue
+        body = "<br>".join(f"<b>{html.escape(k)}:</b> {html.escape(str(v))}" for k, v in value.items())
+        boxes.append(f"<div class='prov-box'><div class='prov-box-title'>{html.escape(key)}</div>"
+                     f"<div class='prov-box-body'>{body}</div></div>")
+    for key in ("n_svs_total", "n_bnd_events", "n_bnd_fusion_pair_checked", "n_whitelist_hits",
+                "n_blacklist_hits", "n_svs_in_main_table", "min_supporting_cells_for_main_table",
+                "figures_generated"):
+        if key in provenance:
+            boxes.append(f"<div class='prov-box'><div class='prov-box-title'>{html.escape(key)}</div>"
+                         f"<div class='prov-box-body'>{html.escape(str(provenance[key]))}</div></div>")
+    return "<div class='prov-grid'>" + "".join(boxes) + "</div>"
 
+
+def sv_fusion_top_table_html(top_rows: list[dict], sv_fusion_dir: Path) -> str:
+    """Top-N ranked SV table: unlike table_html()'s generic column-dump
+    renderer, this embeds each row's OncoScan-style figure (when one was
+    generated for it) directly alongside its text explanation."""
+    if not top_rows:
+        return "<p class='missing'>Not yet available.</p>"
+    parts = ["<table><thead><tr><th>Rank</th><th>Type</th><th>Region</th><th>Cells sharing</th>"
+             "<th>Whitelist</th><th>Blacklist</th><th>Explanation</th><th>Figure</th></tr></thead><tbody>"]
+    for row in top_rows:
+        figure_relpath = row.get("figure_png", "")
+        figure_html = img_tag(sv_fusion_dir / figure_relpath, f"SV rank {row.get('rank')}", max_width="360px") \
+            if figure_relpath else "<span class='missing'>(not generated for this rank)</span>"
+        whitelist_mark = "&#10003; WHITELIST" if row.get("whitelist_hit") == "True" else ""
+        blacklist_mark = "&#10003; BLACKLIST" if row.get("blacklist_hit") == "True" else ""
+        parts.append(
+            "<tr>"
+            f"<td>{html.escape(str(row.get('rank', '')))}</td>"
+            f"<td>{html.escape(row.get('SVTYPE', ''))}</td>"
+            f"<td>{html.escape(row.get('region', ''))}</td>"
+            f"<td>{html.escape(row.get('supporting_cells', ''))}/{html.escape(row.get('n_cohort_cells', ''))} "
+            f"({html.escape(row.get('pct_cells', ''))})</td>"
+            f"<td>{whitelist_mark}</td><td>{blacklist_mark}</td>"
+            f"<td style='max-width:420px'>{html.escape(row.get('explanation', ''))}</td>"
+            f"<td style='min-width:360px'>{figure_html}</td>"
+            "</tr>"
+        )
+    parts.append("</tbody></table>")
+    return "".join(parts)
 
 
 METHODS_COMPARISON_ROWS = [
@@ -333,6 +330,11 @@ PAGE_TEMPLATE = Template(r"""<!doctype html>
   .tabcontent.active { display: block; }
   iframe.multiqc-embed { width: 100%; height: 1400px; border: 1px solid #ccc; }
   .fig-wrap { margin: 1rem 0; }
+  .prov-grid { display: flex; flex-wrap: wrap; gap: 10px; margin: 0.5rem 0 1.5rem 0; }
+  .prov-box { background: #f4f6f8; border: 1px solid #ccd3d9; border-radius: 6px; padding: 8px 12px;
+              min-width: 220px; max-width: 420px; font-size: 0.82rem; }
+  .prov-box-title { font-weight: bold; color: #2c3e50; margin-bottom: 4px; word-break: break-word; }
+  .prov-box-body { color: #333; word-break: break-word; }
 </style>
 </head>
 <body>
@@ -345,14 +347,14 @@ Generated alongside, not replacing, the official BaseJumper-parity workflow dash
 <div class="tabbar">
   <button class="tablink active" onclick="showTab(event,'tab-overview')">Overview</button>
   <button class="tablink" onclick="showTab(event,'tab-qc')">QC</button>
+  <button class="tablink" onclick="showTab(event,'tab-libraryqc')">Library QC</button>
   <button class="tablink" onclick="showTab(event,'tab-phasing')">Phasing</button>
   <button class="tablink" onclick="showTab(event,'tab-cnv')">CNV</button>
   <button class="tablink" onclick="showTab(event,'tab-loh')">LOH</button>
   <button class="tablink" onclick="showTab(event,'tab-lohregion')">LOH by Region</button>
   <button class="tablink" onclick="showTab(event,'tab-lineage')">Lineage</button>
-  <button class="tablink" onclick="showTab(event,'tab-sv')">Structural Variants</button>
+  <button class="tablink" onclick="showTab(event,'tab-svfusion')">SV Gene Fusions</button>
   <button class="tablink" onclick="showTab(event,'tab-mutsig')">Mutational Signatures</button>
-  <button class="tablink" onclick="showTab(event,'tab-libraryqc')">Library QC</button>
 </div>
 
 <div id="tab-overview" class="tabcontent active">
@@ -429,6 +431,20 @@ $artifact_table
 <p class="section-note">Embedded via iframe from <code>$multiqc_relpath</code> (relative to this dashboard's final
 location). If figures below appear blank, open that file directly.</p>
 <iframe class="multiqc-embed" src="$multiqc_relpath"></iframe>
+</div>
+
+<div id="tab-libraryqc" class="tabcontent">
+<h2>CUSTOM library QC comparison</h2>
+<p class="section-note">Embeds the existing <code>library_dashboard</code> stage's own standalone page
+(<code>qc/library_dashboard/source_threshold_dashboard.html</code>) -- an independent, per-cell comparison of
+this workflow's own measured library-prep/sequencing metrics against the licensed source pipeline's five
+configured pass/fail thresholds (preseq library complexity, chimeric-read rate, mitochondrial depth fraction,
+and CNV MAPD/skew noise). <b>Informational only</b>: this comparison never replaces or overrides this
+workflow's own cell-QC gate (<a href="#" onclick="showTab(event,'tab-qc');return false;">see the QC tab</a>
+for the gate actually used). The embedded page itself documents, per cell and per metric, exactly why any
+FAIL or UNKNOWN call was made, the rationale behind each of the five configured cutoffs, and full run
+provenance.</p>
+<iframe class="multiqc-embed" src="$library_qc_relpath"></iframe>
 </div>
 
 <div id="tab-phasing" class="tabcontent">
@@ -540,22 +556,41 @@ not automatically evidence against the SNV tree, since this method has its own d
 $sv_similarity_section
 </div>
 
-<div id="tab-sv" class="tabcontent">
-<h2>Structural variants (Manta, per-cell)</h2>
-<p class="section-note">Raw structural-variant call data from the existing per-cell Manta calling
-(<code>variants_cnv_sv</code> stage) and the <code>sv_similarity</code>/<code>sv_similarity_shared</code>
-stages' own feature tables -- no new upstream caller. This tab is about the SV calls themselves (counts,
-types, how widely shared each is); for the similarity-clustering <i>use</i> of this same data as an
-orthogonal lineage cross-check, see the Lineage tab's "Structural-variant similarity clustering" section
-above (same underlying calls, different analysis/purpose -- not duplicated here).</p>
-<h3>SV prevalence across the cohort</h3>
-$sv_prevalence_histogram
-<h3>Per-cell SV summary</h3>
-<p class="section-note">Per-cell counts of detected SV breakpoints (<code>detected_features</code>), how
-many are private to that cell vs. shared with at least one other cell, the per-type breakdown (Manta's own
-BND/DEL/DUP/INS classes), and each cell's nearest neighbor by SV-sharing Jaccard distance (same metric used
-for the Lineage tab's clustering, surfaced per-cell here for direct inspection).</p>
-$sv_percell_table
+<div id="tab-svfusion" class="tabcontent">
+<h2>SV gene-fusion annotation <span class="status-badge status-$svfusion_status_class">$svfusion_status</span></h2>
+<p class="section-note">Computed directly from the SAME Manta structural-variant calls already produced by the
+existing <code>variants_cnv_sv</code> stage (<code>sv_features.tsv</code> / <code>sv_binary.tsv</code>) &mdash;
+<b>no new SV caller, no re-calling</b>. Each BND (translocation-type) event's two breakpoints are checked,
+gene-pair by gene-pair, against a WHITELIST of known cancer-associated gene fusions (default: the Mitelman
+Database of Chromosome Aberrations and Gene Fusions in Cancer, via Arriba's MIT-licensed redistribution) and a
+BLACKLIST of gene pairs recurrently reported as fusion transcripts in normal, non-cancer tissue (default:
+Babiceanu et al. 2016 + Greger et al. 2014). DEL/DUP spans are separately annotated with every gene they
+overlap; no whitelist/blacklist check applies to DEL/DUP/INS (both reference lists are built from RNA-level
+fusion-transcript evidence, which only a translocation/breakend can plausibly produce &mdash; see
+<code>sv_gene_fusion_annotation.py</code>'s own docstring for the full reasoning). See the Lineage tab for the
+separate, exploratory SV-sharing <i>similarity-clustering</i> analysis &mdash; this tab is a different kind of
+analysis (gene/fusion identity, not cell-to-cell similarity).</p>
+<div class="caveat"><b>Caveat:</b> both reference lists were built from RNA-level fusion-transcript evidence,
+not DNA-level SV breakpoints. Applying them to Manta's DNA-level breakpoints here is a standard, reasonable
+adaptation in the field, but it is an adaptation &mdash; treat a whitelist/blacklist hit as a prioritization
+aid for manual review, not a standalone pathogenicity or benignity call.</div>
+
+<h3>Whitelist / blacklist used this run</h3>
+$svfusion_provenance_boxes
+
+<h3>Top-ranked SVs (with explanations and figures)</h3>
+<p class="section-note">Ranking: (1) BND events whose two breakpoint genes match the cancer-fusion whitelist,
+most-recurrent first; then (2) every other non-blacklisted SV, also most-recurrent first. Blacklisted SVs
+(known normal-tissue fusions) are excluded from this ranked list entirely &mdash; shown, flagged, in the full
+table below instead. An OncoScan-style figure (chromosome schematic with breakpoint/gene labels, plus a
+per-cell presence strip across the whole cohort) is generated for the highest-ranked subset of these rows
+(bounds dashboard size/runtime); every ranked row gets a text explanation regardless of whether it has a
+figure.</p>
+$svfusion_top_table
+
+<h3>All gene-overlapping, recurrent SVs</h3>
+<p class="section-note">$svfusion_main_note</p>
+$svfusion_main_table
 </div>
 
 <div id="tab-mutsig" class="tabcontent">
@@ -572,17 +607,6 @@ $mutsig_cosine_table
 <p class="section-note">Columns are COSMIC SBS signature IDs; cells omitted below a signature's column had zero
 estimated contribution after backward-elimination refitting.</p>
 $mutsig_contrib_table
-</div>
-
-<div id="tab-libraryqc" class="tabcontent">
-<h2>Library QC: source-threshold comparison</h2>
-<p class="section-note">Embedded in full below (own cutoff rationale, per-cell pass/fail explanations, and
-provenance all included in the embedded page itself). This is a separate, source-pipeline-threshold-based QC
-pass, distinct from the per-cell QC summary already shown in the QC tab -- see the embedded page's own
-Overview text for exactly how the two differ (e.g. pre- vs. post-dedup read accounting, fastp vs. Picard QC
-stage). <b>These source-threshold checks are explicitly informational only and never override actual cell
-calling</b> (see the embedded page's own first paragraph).</p>
-<iframe class="multiqc-embed" src="../qc/library_dashboard/source_threshold_dashboard.html"></iframe>
 </div>
 
 <script>
@@ -691,6 +715,9 @@ def main():
     p.add_argument("--multiqc-relpath", default="../components/multiqc/multiqc_report.html",
                     help="Path to the native MultiQC report, relative to this dashboard's own "
                          "final location (used as an <iframe> src, not copied/inlined).")
+    p.add_argument("--library-qc-relpath", default="../qc/library_dashboard/source_threshold_dashboard.html",
+                    help="Path to step2_library_qc_dashboard.py's own standalone page, relative to this "
+                         "dashboard's own final location (used as an <iframe> src, not copied/inlined).")
     p.add_argument("--output", required=True, type=Path)
     args = p.parse_args()
 
@@ -712,6 +739,15 @@ def main():
     loh_region_rows_all = read_tsv(EM / "loh_by_region.tsv")
     loh_region_rows_all.sort(key=lambda r: float(r.get("fraction_cells_loh", 0) or 0), reverse=True)
     loh_region_rows = [r for r in loh_region_rows_all if float(r.get("fraction_cells_loh", 0) or 0) > 0]
+
+    sv_fusion_dir = EM / "sv_gene_fusion"
+    sv_fusion_provenance_path = sv_fusion_dir / "provenance.json"
+    sv_fusion_provenance = (
+        json.loads(sv_fusion_provenance_path.read_text()) if sv_fusion_provenance_path.is_file() else {}
+    )
+    top_n = sv_fusion_provenance.get("top_n", 50)
+    sv_fusion_top_rows = read_tsv(sv_fusion_dir / f"sv_gene_fusion_top{top_n}.tsv")
+    sv_fusion_main_rows_all = read_tsv(sv_fusion_dir / "sv_gene_annotation_main.tsv")
 
     verification_json_path = EM / "lineage_verification" / "verification_summary.json"
     verification_summary = None
@@ -802,6 +838,7 @@ def main():
         artifact_table=table_html(artifact_rows, ["sample_id", "n_pass_total", "n_universal", "n_singleton",
                                                    "n_recurrent_subset_flagged_artifact"]),
         multiqc_relpath=args.multiqc_relpath,
+        library_qc_relpath=args.library_qc_relpath,
         phasing_table=table_html(phasing_rows, ["sample_id", "n_records", "n_het", "n_het_phased",
                                                  "het_phased_fraction", "status"]),
         cnv_overview_table=table_html(cnv_overview_rows, ["sample_id", "n_segments", "pct_genome_gain",
@@ -827,12 +864,23 @@ def main():
         tree_display="block" if newick else "none",
         newick_json=json.dumps(newick),
         sv_similarity_section=sv_similarity_section(EM.parent),
-        sv_prevalence_histogram=sv_prevalence_histogram(EM.parent),
-        sv_percell_table=table_html(
-            read_tsv(EM.parent / "sv_similarity" / "sample_sv_summary.tsv"),
-            ["sample_id", "detected_features", "private_features", "shared_features",
-             "BND", "DEL", "DUP", "INS", "nearest_cell", "nearest_jaccard_distance"],
-            max_rows=100,
+        svfusion_status="Complete" if sv_fusion_top_rows else "Pending",
+        svfusion_status_class="complete" if sv_fusion_top_rows else "pending",
+        svfusion_provenance_boxes=sv_fusion_provenance_boxes(sv_fusion_provenance),
+        svfusion_top_table=sv_fusion_top_table_html(sv_fusion_top_rows, sv_fusion_dir),
+        svfusion_main_note=(
+            f"{len(sv_fusion_main_rows_all)} SVs hit at least one annotated gene and are shared by "
+            f"&ge;{sv_fusion_provenance.get('min_supporting_cells_for_main_table', 2)} cells (showing the "
+            "first 300, sorted by recurrence); the full, unfiltered annotation (every SV, including "
+            "non-gene-overlapping and singleton ones) is at "
+            "<code>extra_methods/sv_gene_fusion/sv_gene_annotation_full.tsv</code>."
+            if sv_fusion_main_rows_all else "Not yet available."
+        ),
+        svfusion_main_table=table_html(
+            sv_fusion_main_rows_all,
+            ["VariantId", "SVTYPE", "region", "supporting_cells", "pct_cells",
+             "genes_breakpoint1", "genes_breakpoint2", "genes_in_span", "whitelist_hit", "blacklist_hit"],
+            max_rows=300,
         ),
         mutsig_spectrum_fig=img_tag(EM / "mutational_signatures" / "mutation_spectrum_96.png",
                                      "96-trinucleotide-context mutation spectrum"),
