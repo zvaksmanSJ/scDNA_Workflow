@@ -62,7 +62,29 @@ download_if_missing() {
   if [[ -s "$out" ]]; then echo "[OK] exists: $out"; return 0; fi
   log "downloading: $url"
   mkdir -p "$(dirname "$out")"
-  curl -fL --retry 3 -o "${out}.part" "$url" && mv "${out}.part" "$out"
+  # Large downloads (notably the ~25GB VEP cache tarball) have been observed
+  # to reliably drop mid-transfer with "curl: (56) OpenSSL SSL_read:
+  # unexpected eof while reading" a few GB in, on this network path --
+  # reproduced twice in a row at a similar point, so this is a real,
+  # repeatable connection behavior here, not a one-off fluke. curl's own
+  # --retry doesn't reliably cover a mid-transfer drop like this, and
+  # without -C - (resume), a plain retry restarts the whole download from
+  # byte 0 -- so a connection that reliably drops at the same multi-GB
+  # point would never successfully finish. -C - resumes "${out}.part" from
+  # where it left off on every attempt (curl creates it fresh if absent),
+  # and the outer loop gives it repeated fresh attempts beyond curl's own
+  # internal --retry, each one only needing to cover the remaining bytes.
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if curl -fL --retry 3 --retry-all-errors -C - -o "${out}.part" "$url"; then
+      mv "${out}.part" "$out"
+      return 0
+    fi
+    warn "download attempt ${attempt}/8 failed (will resume from $(du -h "${out}.part" 2>/dev/null | cut -f1 || echo 0) if retried): $url"
+    sleep 15
+  done
+  err "download failed after 8 attempts (even with resume): $url"
+  return 1
 }
 
 log "BASE_DIR=${BASE_DIR}  THREADS=${THREADS}  ENSEMBL_RELEASE=${ENSEMBL_RELEASE}  VEP_CACHE_VERSION=${VEP_CACHE_VERSION}"
