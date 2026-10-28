@@ -488,6 +488,18 @@ annotation must be validated as a compatible set before use.
 
 ## Workflow (Python/LSF production pipeline)
 
+**This pipeline uses 4 BioSkryb/BaseJumper-licensed components** (the
+DeepVariant single-cell checkpoint, the basej-somatic/basej-lineage/
+basej-dnaqc Nextflow pipeline source, their container images, and a
+genome-bundle layout they expect) -- see
+**[`LICENSED_COMPONENTS.md`](./LICENSED_COMPONENTS.md)** for exactly what
+each is, why it's licensed, how to point this pipeline at your own
+separately-obtained copies via environment-variable overrides (no code
+changes needed), and a preflight script
+(`setup/check_licensed_components.sh`) that validates your setup before a
+real run. If you don't have such a license, see that same document's final
+section for the free/open-source `main.wdl` alternative instead.
+
 The following stages define the intended processing order. Each stage
 consumes the validated outputs of its predecessors and records its inputs,
 outputs, commands, and status.

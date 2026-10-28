@@ -10,6 +10,7 @@ this file is just a quick navigation map of the folder layout below.
 | Path | What's in it |
 |---|---|
 | **`main.wdl`** | The general-purpose WDL workflow's entry point. Run this (with Cromwell -- see `wdl/README.md`) for a free-tools-only, portable version of the pipeline. |
+| **`LICENSED_COMPONENTS.md`** | What's licensed in the production pipeline below (4 BioSkryb/BaseJumper components), why, how to plug in your own license, and the free/open-source alternative if you don't have one. |
 | **`README_RFC_DNA_Workflow.md`** | The full RFC: motivation, design rationale, dependencies, complete tool-by-tool command reference, known issues/fixes, and verification status for both pipelines below. |
 | `wdl/` | `main.wdl`'s supporting task modules (`tasks/*.wdl`), WDL-support Python scripts (`scripts/`), the required Cromwell config (`cromwell_local.conf`), and its own usage `README.md`. |
 | `sprocket/` | A Sprocket-native (https://github.com/stjude-rust-labs/sprocket, St. Jude's own next-gen WDL engine) port of the same workflow -- its own `main.wdl`, task files, 4 new Dockerfiles, `sprocket.toml`, and its own `README.md` explaining exactly how and why it differs from the Cromwell-oriented `main.wdl`/`wdl/` above. **Written but not run, built, or pushed anywhere** -- see that README's own "What this port does NOT do" section. |
@@ -25,13 +26,20 @@ this file is just a quick navigation map of the folder layout below.
 ## Which pipeline do I want?
 
 - **Running this project's own real cohort, on this cluster, with its
-  licensed BioSkryb DeepVariant model?** Use `python_lsf_pipeline/` (the
+  licensed BioSkryb components (DeepVariant checkpoint + basej-somatic/
+  basej-lineage Nextflow pipelines)?** Use `python_lsf_pipeline/` (the
   original pipeline) -- see `README_RFC_DNA_Workflow.md`'s
   ["Workflow (Python/LSF production pipeline)"](./README_RFC_DNA_Workflow.md#workflow-pythonlsf-production-pipeline)
-  section.
+  section, and **[`LICENSED_COMPONENTS.md`](./LICENSED_COMPONENTS.md)** for
+  exactly which 4 components are licensed, how to point this pipeline at
+  your own separately-obtained copies (environment-variable overrides, no
+  code changes needed), and a preflight script that validates your setup.
 - **Deploying this workflow somewhere new, or want a free/portable path with
-  no licensed dependencies?** Use `main.wdl` -- see `wdl/README.md` for
+  no licensed dependencies at all (including if you don't have, or can't
+  get, a BioSkryb license)?** Use `main.wdl` -- see `wdl/README.md` for
   exact run commands, and `setup/setup.sh` to provision everything it needs.
+  `LICENSED_COMPONENTS.md`'s last section also summarizes this path and
+  exactly how its results compare to the licensed production pipeline's.
 - **Running on St. Jude's own Sprocket engine instead of Cromwell?** Use
   `sprocket/main.wdl` -- see `sprocket/README.md` for exactly how and why it
   differs from the Cromwell version above (container-per-task model means
@@ -118,13 +126,27 @@ don't supply a private checkpoint.
 ### 3. Quick start
 
 ```bash
-# 1. Build your inputs.json. Start from the complete example and fill in
-#    your own cohort (sample_ids/r1_fastqs/r2_fastqs/donor_id/gender) plus
-#    every path setup.sh just produced (it prints each one as it runs) --
-#    or use wdl/scripts/build_inputs_json.py to merge a FASTQ manifest TSV
-#    into the example automatically (see wdl/README.md).
-cp wdl/example_inputs.json inputs.json
-# ... edit inputs.json ...
+# 1. Build your inputs.json from a simple FASTQ manifest TSV (sample_id,
+#    r1_fastq, r2_fastq -- one row per cell) merged into the example's
+#    fixed infrastructure paths. This ALSO regenerates the full chr1-22
+#    phasing/genetic-map maps from what setup.sh just installed --
+#    wdl/example_inputs.json only illustrates those with 2 example
+#    chromosomes to stay readable, so copying it manually and editing by
+#    hand (without this script) is NOT safe: it silently produces an
+#    inputs.json that runs cleanly through alignment/variant-calling for
+#    every cell, then crashes partway through, at the phasing stage's
+#    chr3 scatter iteration. See wdl/scripts/build_inputs_json.py's own
+#    docstring/--help for more (including --wdl-runtime-dir if you ran
+#    setup.sh with a non-default BASE_DIR).
+python3 wdl/scripts/build_inputs_json.py \
+  --manifest my_cells.tsv \
+  --base wdl/example_inputs.json \
+  --donor-id my_cohort \
+  --output inputs.json
+# Then still fill in any infrastructure paths unique to your deployment
+# that aren't produced by setup.sh at its default locations -- gender,
+# the DeepVariant checkpoint override if you have one, etc. (see
+# wdl/README.md and wdl/example_inputs.json's own "_comment_*" keys).
 
 # 2. Run it with Cromwell (from the repo root -- main.wdl's own `import`
 #    statements are written relative to that location)

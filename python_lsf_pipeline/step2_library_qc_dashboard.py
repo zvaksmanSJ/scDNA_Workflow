@@ -43,13 +43,24 @@ import html
 import importlib.util
 import json
 import math
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
 
 
-SOURCE_ROOT = Path(__file__).resolve().parent.parent / "resolveome_align/basej-public-pipelines/basej-dnaqc"  # resolveome_align/ lives at workflow_DNA root
+# SCDNA_BASEJ_PIPELINES_DIR overrides the licensed BioSkryb/BaseJumper
+# basej-public-pipelines/ bundle's location for a licensee supplying their
+# own separately-obtained copy -- see LICENSED_COMPONENTS.md (workflow_DNA/
+# root) and run_all_resolveome.py's matching override of the same variable.
+# Unset (this project's own real-cohort default) resolves to the exact path
+# this script has always hardcoded, so existing behavior is unchanged.
+_BASEJ_PIPELINES_DIR = os.environ.get("SCDNA_BASEJ_PIPELINES_DIR")
+SOURCE_ROOT = (
+    Path(_BASEJ_PIPELINES_DIR).expanduser().resolve() / "basej-dnaqc" if _BASEJ_PIPELINES_DIR
+    else Path(__file__).resolve().parent.parent / "resolveome_align/basej-public-pipelines/basej-dnaqc"
+)  # resolveome_align/ lives at workflow_DNA root
 DEFAULT_CONFIG = SOURCE_ROOT / "assets/plot_qc_config.json"
 RULES = {
     "preseq_count": ("cutoff_preseq", ">"),

@@ -181,10 +181,22 @@ python3 wdl/scripts/build_inputs_json.py \
   --output inputs.json
 ```
 
-This only replaces the 3 FASTQ-list keys; every other key in `--base` is
-copied through unchanged, so you still need to fill in `example_inputs.json`
-(or your own base file) once per deployment with real paths from
-`setup/setup.sh`'s output and all 22 autosome entries in the 3 phasing Maps.
+This replaces the 3 FASTQ-list keys, AND regenerates the 3 phasing Maps
+(`phasing_ref_panel_by_chrom`, `phasing_ref_panel_tbi_by_chrom`,
+`genetic_map_by_chrom`) to a complete chr1-22 set by globbing the real
+per-chromosome files `setup/setup.sh` downloads under `--wdl-runtime-dir`
+(default: `wdl_runtime`, matching `setup.sh`'s own default `BASE_DIR`) --
+**not** by copying whatever `--base` happens to contain for them.
+`wdl/example_inputs.json` deliberately only illustrates those 3 keys with 2
+example chromosomes (1, 2) to stay readable; copying that through unchanged
+(the old behavior, still available via `--skip-autosome-regen` if you've
+hand-built a complete `--base`) produces an `inputs.json` that runs cleanly
+through alignment/variant-calling for every cell, then fails partway
+through, at the phasing stage's chr3 scatter iteration -- after the
+expensive stages already ran. Every other key in `--base` besides those 3
+Maps and the FASTQ lists is still copied through unchanged, so you still
+need to fill in `example_inputs.json` (or your own base file) once per
+deployment with the rest of `setup/setup.sh`'s real output paths.
 
 ## Running at LSF scale (production)
 

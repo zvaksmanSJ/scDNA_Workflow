@@ -14,7 +14,17 @@ import subprocess
 import sys
 
 HERE = Path(__file__).resolve().parent.parent  # workflow_DNA root (this script now lives one level deeper, in python_lsf_pipeline/)
-SOURCE = HERE / "resolveome_align/basej-public-pipelines/basej-dnaqc"
+# SCDNA_BASEJ_PIPELINES_DIR overrides the licensed BioSkryb/BaseJumper
+# basej-public-pipelines/ bundle's location for a licensee supplying their
+# own separately-obtained copy -- see LICENSED_COMPONENTS.md (workflow_DNA/
+# root) and run_all_resolveome.py's matching override of the same variable.
+# Unset (this project's own real-cohort default) resolves to the exact path
+# this script has always hardcoded, so existing behavior is unchanged.
+_BASEJ_PIPELINES_DIR = os.environ.get("SCDNA_BASEJ_PIPELINES_DIR")
+SOURCE = (
+    Path(_BASEJ_PIPELINES_DIR).expanduser().resolve() / "basej-dnaqc" if _BASEJ_PIPELINES_DIR
+    else HERE / "resolveome_align/basej-public-pipelines/basej-dnaqc"
+)
 REFERENCE = (HERE / "../pipeline_resources/genomes/Homo_sapiens/NCBI/GRCh38/"
              "Annotation/Ginkgo_reference/GRCH38_RL_50_Bin1MB").resolve()
 SOURCE_FILES = ("container/ginkgo/binUnsorted", "container/ginkgo/cnv_ginkgo.R",

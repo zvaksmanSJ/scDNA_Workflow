@@ -70,7 +70,19 @@ DEFAULT_DV_SIF = (
     "deepvariant.sif"
 )
 
+# SCDNA_DEEPVARIANT_CHECKPOINT_DIR overrides the licensed BioSkryb-private
+# checkpoint+population-VCF bundle's parent directory for a licensee
+# supplying their own separately-obtained copy -- see LICENSED_COMPONENTS.md
+# (workflow_DNA root) and run_all_resolveome.py's matching override (which
+# always passes --deepvariant-model-dir/--deepvariant-population-vcfs
+# explicitly when invoking this script through the normal pipeline, so this
+# default only matters when this script is run standalone, outside that
+# orchestrator). Unset resolves to the exact absolute path this script has
+# always hardcoded, so existing behavior is unchanged.
+_DV_CHECKPOINT_DIR = os.environ.get("SCDNA_DEEPVARIANT_CHECKPOINT_DIR")
+
 DEFAULT_DV_MODEL_DIR = (
+    f"{_DV_CHECKPOINT_DIR.rstrip('/')}/model" if _DV_CHECKPOINT_DIR else
     "/research_jude/rgs01_jude/groups/SJCloud/common/Zalman/Ultima_test/"
     "ResolveOME_illumina/pipeline_resources/genomes/Homo_sapiens/NCBI/"
     "GRCh38/Annotation/DeepVariant/Illumina/"
@@ -80,6 +92,7 @@ DEFAULT_DV_MODEL_DIR = (
 DEFAULT_DV_CKPT = "sc_af.model.ckpt"
 
 DEFAULT_DV_POP_VCFS = (
+    f"{_DV_CHECKPOINT_DIR.rstrip('/')}/population_vcfs_nochr" if _DV_CHECKPOINT_DIR else
     "/research_jude/rgs01_jude/groups/SJCloud/common/Zalman/Ultima_test/"
     "ResolveOME_illumina/pipeline_resources/genomes/Homo_sapiens/NCBI/"
     "GRCh38/Annotation/DeepVariant/Illumina/"

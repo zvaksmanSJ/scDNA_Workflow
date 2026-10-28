@@ -22,8 +22,38 @@ HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent.parent  # ResolveOME_illumina project root (this script now lives one level deeper, in workflow_DNA/python_lsf_pipeline/)
 TOOLS = HERE.parent / "resolveome_align"  # resolveome_align/ lives at workflow_DNA root, one level above this script's own python_lsf_pipeline/ subfolder
 EXTRA = HERE.parent / "extra_methods"  # extra_methods/ lives at workflow_DNA root alongside resolveome_align/
-SOURCE = TOOLS / "basej-public-pipelines"
 ANNOTATION = PROJECT / "pipeline_resources/genomes/Homo_sapiens/NCBI/GRCh38/Annotation"
+
+
+def _licensed_component_dir(env_var: str, default: Path) -> Path:
+    """Resolve the on-disk location of one BioSkryb/BaseJumper-licensed
+    component (Nextflow pipeline source, a .sif container bundle, or the
+    DeepVariant model checkpoint), honoring an environment-variable override
+    so a licensee who has obtained their own copy of that component can
+    place it anywhere and point this pipeline at it -- without needing to
+    edit this file. When the variable is unset (the default for this
+    project's own real cohort runs), this resolves to the EXACT path this
+    script has always hardcoded, so existing behavior is completely
+    unchanged. This function never downloads, generates, or bundles
+    anything -- see LICENSED_COMPONENTS.md (in this project's workflow_DNA/
+    root) for what each variable controls, why it's licensed rather than
+    free/redistributable, and how to legitimately obtain your own copy from
+    BioSkryb/BaseJumper to place at the location you then point this at."""
+    value = os.environ.get(env_var)
+    return Path(value).expanduser().resolve() if value else default
+
+
+# Each of these four is an independently-licensed BioSkryb/BaseJumper
+# deliverable (see LICENSED_COMPONENTS.md). None of this project's setup
+# scripts download, build, or redistribute any of them -- they must already
+# exist at the location below (the project's own existing real-cohort
+# layout, used whenever the corresponding env var is unset) or be supplied
+# via the matching override.
+SOURCE = _licensed_component_dir("SCDNA_BASEJ_PIPELINES_DIR", TOOLS / "basej-public-pipelines")
+BASEJ_CONTAINERS = _licensed_component_dir("SCDNA_BASEJ_CONTAINERS_DIR", TOOLS / "containers/basej-somatic")
+DEEPVARIANT_CHECKPOINT_DIR = _licensed_component_dir(
+    "SCDNA_DEEPVARIANT_CHECKPOINT_DIR", ANNOTATION / "DeepVariant/Illumina/bioskryb-af-20241102")
+BASEJ_GENOMES_DIR = _licensed_component_dir("SCDNA_BASEJ_GENOMES_DIR", TOOLS / "basej_genomes_nochr")
 CHROMS = ",".join([*(str(i) for i in range(1, 23)), "X", "Y"])
 LINEAGE_SCRIPTS = (
     "rscript_sequoia_build_phylogeny_only.R", "rscript_minimal_variant_placement.R",
@@ -90,7 +120,7 @@ def preflight(args):
         raise RuntimeError("Reference parity requires fastp 0.20.1")
     for name in ("deepvariant.sif", "manta.sif", "vep.r112.sif"):
         require_file(TOOLS / "containers" / name)
-    model = ANNOTATION / "DeepVariant/Illumina/bioskryb-af-20241102/model"
+    model = DEEPVARIANT_CHECKPOINT_DIR / "model"
     for suffix in (".index", ".data-00000-of-00001"):
         require_file(model / f"sc_af.model.ckpt{suffix}")
     populations = model.parent / "population_vcfs_nochr"
@@ -101,7 +131,7 @@ def preflight(args):
             raise FileNotFoundError(f"Required VEP cache {cache}")
     require_file(TOOLS / "refs/annotation/genes.bed")
     require_file(TOOLS / "refs/annotation/gencode.v46.annotation.gtf.gz")
-    image_dir = TOOLS / "containers/basej-somatic"
+    image_dir = BASEJ_CONTAINERS
     for image in ("utility-lite-0.2.0", "variantannotation_0.4", "r_ado_1.2",
                   "custom_snp_somatic_filter_sequoia_feb2026"):
         require_file(image_dir / f"{image}.sif")
@@ -150,7 +180,7 @@ def preflight(args):
     for executable in ("make_examples", "call_variants", "postprocess_variants"):
         run(["apptainer", "exec", "--no-mount", "/programs", TOOLS / "containers/deepvariant.sif",
              "/bin/test", "-x", f"/opt/deepvariant/bin/{executable}"])
-    require_file(TOOLS / "basej_genomes_nochr/genomes/Homo_sapiens/NCBI/GRCh38/Annotation/GATK_bundle/Sequence/genome.fa.fai")
+    require_file(BASEJ_GENOMES_DIR / "genomes/Homo_sapiens/NCBI/GRCh38/Annotation/GATK_bundle/Sequence/genome.fa.fai")
     report["reference_fai_sha256"] = hashlib.sha256(Path(args.ref + ".fai").read_bytes()).hexdigest()
     return report
 
@@ -254,7 +284,7 @@ def poll_multi_stage(pending, poll_seconds=60):
 
 def write_nf_config(root, kind, queue):
     config = root / "scripts" / f"{kind}_lsf_apptainer.config"
-    image = TOOLS / "containers/basej-somatic/custom_snp_somatic_filter_sequoia_feb2026.sif"
+    image = BASEJ_CONTAINERS / "custom_snp_somatic_filter_sequoia_feb2026.sif"
     runtime = root / "scripts/lineage_runtime"
     bindings = ""
     if kind == "lineage":
@@ -285,7 +315,7 @@ process {{
     if kind == "somatic":
         content += f"""
     withName: 'FILTER_VEP_GERMLINE_CHR' {{
-        container = '{TOOLS / "containers/basej-somatic/variantannotation_0.4.sif"}'
+        container = '{BASEJ_CONTAINERS / "variantannotation_0.4.sif"}'
     }}
     // basej-somatic's own nextflow.config gives SORT_INDEX_VEP_VCF only a
     // 1h time budget with no retry (unlike its sibling VEP_ANNOTATE, which
@@ -358,7 +388,7 @@ def commands(args):
     root = args.outdir
     passed = root / "manifests/passed_cells_only_manifest.tsv"
     gtf = TOOLS / "refs/annotation/gencode.v46.annotation.gtf.gz"
-    model = ANNOTATION / "DeepVariant/Illumina/bioskryb-af-20241102"
+    model = DEEPVARIANT_CHECKPOINT_DIR
     em = root / "extra_methods"  # matches extra_methods/organize_final_results.py's own hardcoded layout
     return {
         "alignment": python_stage("step1_submit_resolveome_alignment_IluminaOnly_lsf.py",
@@ -874,7 +904,7 @@ def perform(args):
         run([TOOLS / "tools/nextflow", "-c", config, "run", SOURCE / "basej-somatic/main.nf",
              "-profile", "singularity", "--platform", "Illumina",
              "--input_csv", root / "somatic_inputs/basej_somatic_inputs.csv",
-             "--genomes_base", TOOLS / "basej_genomes_nochr", "--genome", "GRCh38",
+             "--genomes_base", BASEJ_GENOMES_DIR, "--genome", "GRCh38",
              "--chrs", CHROMS, "--gender", args.gender, "--architecture", "x86",
              "--model_vcf", "deepvariant", "--seq_mode", "wgs",
              "--vep_cache_dir", ANNOTATION / "VEP", "--outputDir", output,
