@@ -37,7 +37,7 @@ task BuildLineageTree {
     Int mpboot_bootstrap = 1000
     Int max_shared_sites = 20000
     Int random_seed = 42
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
     String r_conda_env = "mutsig"   # has R + ape; Sequoia's own deps install on first run
   }
   command <<<
@@ -99,7 +99,7 @@ task VerifyLineage {
     Int max_shared_sites = 20000
     Int rerun_seed = 123
     Float bootstrap_threshold = 70.0
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
     String r_conda_env = "mutsig"
   }
   # Independent verification of the primary tree built above: re-runs the

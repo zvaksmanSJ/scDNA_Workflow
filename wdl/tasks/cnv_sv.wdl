@@ -29,7 +29,7 @@ task CnvkitCall {
     File ref_fasta_fai
     File? cnv_reference_cnn
     Int threads = 4
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail
@@ -84,7 +84,7 @@ task MantaCall {
     File ref_fasta_fai
     File manta_sif
     Int threads = 4
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail

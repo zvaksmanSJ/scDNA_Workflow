@@ -45,7 +45,7 @@ task AlignTrimQC {
     Int threads = 8
     String sort_mem = "3G"
     Boolean skip_fastqc = false
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
     Int mem_gb = 32
     Int disk_gb = 200
   }

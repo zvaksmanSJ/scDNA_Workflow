@@ -159,7 +159,7 @@ workflow ResolveOmeDnaWorkflow {
     File build_dashboard_script
 
     # ---- conda environment names, created by setup.sh; activated inside tasks ----
-    String conda_env = "resolveome-align"   # alignment/QC/variant/CNV/SV/summary tools
+    String conda_env = "wdl-resolveome-align"   # alignment/QC/variant/CNV/SV/summary tools
     String freec_conda_env = "freec"        # Control-FREEC + its R dependencies
     String r_conda_env = "mutsig"           # MutationalPatterns + BSgenome (mutational signatures only)
   }

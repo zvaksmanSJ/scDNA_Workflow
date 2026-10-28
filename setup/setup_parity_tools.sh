@@ -2,10 +2,10 @@
 set -euo pipefail
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate resolveome-align
+conda activate wdl-resolveome-align
 for tool in fastp bedtools preseq; do
   command -v "$tool" >/dev/null || {
-    echo "[ERROR] Missing $tool. Install the additions in parity_tools.environment.yml into resolveome-align." >&2
+    echo "[ERROR] Missing $tool. Install the additions in parity_tools.environment.yml into wdl-resolveome-align." >&2
     exit 2
   }
 done
@@ -51,4 +51,4 @@ ln -sfn "$TARGET/bin/bam2mr" "$CONDA_PREFIX/bin/bam2mr"
 ln -sfn "$TARGET/bin/preseq" "$CONDA_PREFIX/bin/preseq-bioskryb"
 test -x "$CONDA_PREFIX/bin/bam2mr"
 test -x "$CONDA_PREFIX/bin/preseq-bioskryb"
-echo "[OK] Reference preseq 2.0.3 and bam2mr installed in resolveome-align; validate with the workflow preflight/smoke tests"
+echo "[OK] Reference preseq 2.0.3 and bam2mr installed in wdl-resolveome-align; validate with the workflow preflight/smoke tests"

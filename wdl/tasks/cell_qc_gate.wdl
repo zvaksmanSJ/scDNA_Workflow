@@ -37,7 +37,7 @@ task CellQcGate {
     Float cutoff_mapd = 0.25
     Float cutoff_skew = 0.25
     Int threads = 4
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail

@@ -34,7 +34,7 @@ task PhaseChromosome {
     File beagle_jar
     Int mem_gb = 48
     Int threads = 4
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail
@@ -73,7 +73,7 @@ task ConcatPhasedChromosomes {
   input {
     String sample_id
     Array[File] phased_chrom_vcfs   # chr1..chr22, in any order
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   # Gathers this cell's 22 per-chromosome phased VCFs (from the scatter
   # above) back into one whole-genome phased VCF.

@@ -118,7 +118,7 @@ own container (Docker/Singularity/Podman), with no "run directly on the
 host" mode. This workflow's design deliberately does NOT containerize every
 task -- only DeepVariant/VEP/Manta are containerized (via `apptainer exec`
 calls *inside* their own command blocks); every other task assumes the named
-conda environments from `../setup/setup.sh` (`resolveome-align`, `freec`,
+conda environments from `../setup/setup.sh` (`wdl-resolveome-align`, `freec`,
 `manta_env`, `mutsig`) are already on the host, exactly like the real
 LSF/Python pipeline this ports from.
 

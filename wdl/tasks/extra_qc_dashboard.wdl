@@ -25,7 +25,7 @@ task MapdQc {
     Array[File] cnr_files
     Array[String] sample_ids
     File mapd_qc_script
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail
@@ -58,7 +58,7 @@ task FdrEstimate {
     Array[File] wgs_metrics_files
     Array[String] sample_ids
     File fdr_estimate_script
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail
@@ -95,7 +95,7 @@ task ArtifactPanel {
     Array[File] final_annotated_vcfs
     Array[String] sample_ids
     File artifact_panel_script
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail
@@ -129,7 +129,7 @@ task PhasingSummary {
     Array[File] phased_vcfs
     Array[String] sample_ids
     File phasing_summary_script
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail
@@ -167,7 +167,7 @@ task LohAndPloidySummary {
     File ploidy_summary_script
     File loh_by_region_script
     File chrom_len_file
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail
@@ -212,7 +212,7 @@ task QcSummary {
     File multiqc_general_stats
     Array[String] sample_ids
     File qc_summary_script
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail
@@ -288,7 +288,7 @@ task BuildDashboard {
     File build_dashboard_script
     String donor_id = "cohort"
     String multiqc_relpath = "../components/multiqc/multiqc_report.html"
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail

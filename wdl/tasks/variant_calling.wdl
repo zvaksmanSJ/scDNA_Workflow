@@ -30,7 +30,7 @@ task PlanChunks {
     String chroms = "all"
     Int chunk_size_bp = 20000000
     File make_region_chunks_script
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail
@@ -81,7 +81,7 @@ task DeepVariantChunk {
                                         # BioSkryb-private resource for our own real cohort -- see
                                         # setup.sh; leave unset for a general deployment)
     Boolean use_allele_frequency = false
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
     Int threads = 8
     Int mem_gb = 24
   }
@@ -184,7 +184,7 @@ task MergeVcfChunks {
     Array[File] chunk_vcfs
     String out_suffix        # ".deepvariant.raw.vcf.gz" or ".deepvariant.raw.vep.vcf.gz"
     Int merge_parallel_jobs = 6
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
     Boolean require_vep_ann = false
   }
   # Runs once per cell, twice total (once for the raw DeepVariant chunk
@@ -249,7 +249,7 @@ task VepAnnotateChunk {
     String vep_assembly = "GRCh38"
     Int vep_cache_version = 111
     Int threads = 4
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail
@@ -305,7 +305,7 @@ task SnpEffAnnotate {
     File merged_vep_vcf
     String snpeff_db = "GRCh38.111"
     Int snpeff_heap_mb = 8000
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   # Runs once per cell -- a second, complementary annotation pass (snpEff,
   # free, LGPLv3, bioconda) layered on top of the already VEP-annotated,

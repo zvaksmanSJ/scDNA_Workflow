@@ -3,12 +3,15 @@
 The ResolveOME single-cell DNA workflow, in two complementary, fully
 cross-referenced forms. **For the full rationale, specification, and
 history, see [README_RFC_DNA_Workflow.md](./README_RFC_DNA_Workflow.md)** --
-this file is just a quick navigation map of the folder layout below.
+this file is just a quick navigation map of the folder layout below. **New
+to this project and want a single linear checklist to clone, install, and
+run it yourself? See [`QUICKSTART.md`](./QUICKSTART.md).**
 
 ## Folder layout
 
 | Path | What's in it |
 |---|---|
+| **`QUICKSTART.md`** | A single, linear "clone it, install it, run it" checklist for a brand-new user/machine -- start here if you just want to get a run going. |
 | **`main.wdl`** | The general-purpose WDL workflow's entry point. Run this (with Cromwell -- see `wdl/README.md`) for a free-tools-only, portable version of the pipeline. |
 | **`LICENSED_COMPONENTS.md`** | What's licensed in the production pipeline below (4 BioSkryb/BaseJumper components), why, how to plug in your own license, and the free/open-source alternative if you don't have one. |
 | **`README_RFC_DNA_Workflow.md`** | The full RFC: motivation, design rationale, dependencies, complete tool-by-tool command reference, known issues/fixes, and verification status for both pipelines below. |
@@ -95,7 +98,7 @@ cd scDNA_Workflow
 ```
 
 What this installs, all free/open (no licensed or private dependencies):
-- 4 conda environments: `resolveome-align`, `freec`, `manta_env`, `mutsig`
+- 4 conda environments: `wdl-resolveome-align`, `freec`, `manta_env`, `mutsig`
 - a GRCh38 reference FASTA (Ensembl) + bwa-mem2/samtools/Picard indices
 - GATK's public legacy known-sites bundle
 - stock `google/deepvariant` and `ensemblorg/ensembl-vep` containers, pulled
@@ -105,7 +108,7 @@ What this installs, all free/open (no licensed or private dependencies):
 - preseq v2.0.3's `bam2mr`/`gc_extrap` pair (GPLv3, fully public --
   github.com/smithlabcode/preseq, also on bioconda), built from the
   official release tarball and exposed as `bam2mr`/`preseq-bioskryb` in the
-  `resolveome-align` env -- the "-bioskryb" suffix is only this pipeline's
+  `wdl-resolveome-align` env -- the "-bioskryb" suffix is only this pipeline's
   own naming convention to distinguish it from the newer, CLI-incompatible
   bioconda `preseq` 3.x also installed in that same environment (3.x
   renamed `bam2mr` to `to-mr`); it is **not** a private BioSkryb binary.

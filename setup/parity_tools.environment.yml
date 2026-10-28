@@ -1,4 +1,4 @@
-name: resolveome-align
+name: wdl-resolveome-align
 channels:
   - conda-forge
   - bioconda
@@ -6,4 +6,9 @@ dependencies:
   - fastp=0.20.1
   - preseq=3.2.0
   - bedtools=2.31.1
-  - cnvkit=0.9.12
+  # Must match setup.sh's own cnvkit pin (0.9.14) -- 0.9.12 is NOT
+  # installable alongside python=3.11 (see setup.sh's comment next to its
+  # own cnvkit pin for why), and conda env update merges this file's specs
+  # into the same already-created env, so a mismatched pin here would
+  # reintroduce that same solver failure at this later step instead.
+  - cnvkit=0.9.14

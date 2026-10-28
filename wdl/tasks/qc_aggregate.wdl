@@ -14,7 +14,7 @@ version 1.0
 task MultiQC {
   input {
     Array[File] input_files   # flattened list of every QC/log file to scan
-    String conda_env = "resolveome-align"
+    String conda_env = "wdl-resolveome-align"
   }
   command <<<
     set -euo pipefail

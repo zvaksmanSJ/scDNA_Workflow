@@ -19,6 +19,18 @@
 # ../wdl_runtime/ by default (a separate, WDL-only location at workflow_DNA
 # root), or any other BASE_DIR of your choosing.
 #
+# Conda env names are prefixed "wdl-" (e.g. "wdl-resolveome-align") for the
+# same reason: this project's OWN production pipeline separately creates an
+# env literally named "resolveome-align" (via setup_resolveome_alignment.sh,
+# not this script) with a different package set (e.g. it includes `delly`,
+# which this script's env does not). Conda envs are a per-user/account
+# resource, not per-project -- on any account where that production env
+# already exists, this script's own update path
+# (`conda env update -n <name> --prune`) would otherwise silently prune
+# packages out of that OTHER, unrelated, already-in-use environment the
+# first time this script ran. The "wdl-" prefix guarantees no collision
+# regardless of what else is already installed on the account running this.
+#
 # Usage (from anywhere -- the default BASE_DIR is resolved relative to this
 # script's own location, not your current directory):
 #   ./setup.sh [BASE_DIR] [THREADS] [ENSEMBL_RELEASE] [VEP_CACHE_VERSION]
@@ -70,8 +82,8 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 if [[ "${SKIP_CONDA:-0}" != "1" ]]; then
   log "=== Conda environments ==="
 
-  cat > "${BASE_DIR}/env/resolveome-align.yml" <<YAML
-name: resolveome-align
+  cat > "${BASE_DIR}/env/wdl-resolveome-align.yml" <<YAML
+name: wdl-resolveome-align
 channels: [conda-forge, bioconda, defaults]
 dependencies:
   - python=3.11
@@ -84,7 +96,11 @@ dependencies:
   - picard=3.2.0
   - fastqc=0.12.1
   - multiqc=1.21
-  - cnvkit=0.9.12
+  # cnvkit 0.9.12 requires pomegranate<=0.14.9, which cannot be installed
+  # alongside python=3.11 (conda solver fails with
+  # LibMambaUnsatisfiableError) -- 0.9.14 drops the pomegranate dependency
+  # entirely, so it's pinned here instead, not just "latest".
+  - cnvkit=0.9.14
   - snpeff=5.1
   - gatk4=4.6.2.0
   - bedtools
@@ -121,7 +137,7 @@ dependencies:
   - bioconductor-variantannotation
 YAML
 
-  for envname in resolveome-align freec manta_env mutsig; do
+  for envname in wdl-resolveome-align freec manta_env mutsig; do
     if conda env list | awk '{print $1}' | grep -qx "${envname}"; then
       log "conda env '${envname}' already exists, updating (--prune)"
       conda env update -n "${envname}" -f "${BASE_DIR}/env/${envname}.yml" --prune
@@ -139,7 +155,7 @@ fi
 # ===========================================================================
 if [[ "${SKIP_REFERENCE:-0}" != "1" ]]; then
   log "=== Reference genome ==="
-  conda activate resolveome-align
+  conda activate wdl-resolveome-align
 
   GENOME_DIR="${BASE_DIR}/refs/genome"
   FA_GZ="${GENOME_DIR}/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
@@ -200,7 +216,7 @@ fi
 # ===========================================================================
 if [[ "${SKIP_KNOWN_SITES:-0}" != "1" ]]; then
   log "=== GATK known sites ==="
-  conda activate resolveome-align
+  conda activate wdl-resolveome-align
   KNOWN="${BASE_DIR}/refs/gatk_known_sites"
   set +e
   download_if_missing "https://storage.googleapis.com/gatk-legacy-bundles/b38/dbsnp_146.hg38.vcf.gz" "${KNOWN}/dbsnp_146.hg38.vcf.gz"
@@ -264,7 +280,7 @@ if [[ "${SKIP_CONTAINERS:-0}" != "1" ]]; then
   [[ -s "${VEP_CACHE_REPACK}" ]] || tar -cf "${VEP_CACHE_REPACK}" -C "${VEP_CACHE_DIR}" homo_sapiens
 
   # SnpEff database (downloaded through the conda env's own snpEff binary)
-  conda activate resolveome-align
+  conda activate wdl-resolveome-align
   SNPEFF_DB_NAME="GRCh38.${ENSEMBL_RELEASE}"
   if ! snpEff databases 2>/dev/null | grep -q "${SNPEFF_DB_NAME}"; then
     log "Downloading snpEff DB: ${SNPEFF_DB_NAME} (best effort)"
@@ -301,7 +317,7 @@ if [[ "${SKIP_PHASING:-0}" != "1" ]]; then
     if (( $(jobs -r | wc -l) >= 4 )); then wait -n; fi
   done
   wait
-  conda activate resolveome-align
+  conda activate wdl-resolveome-align
   for f in "${PANEL_DIR}"/*.vcf.gz; do
     [[ -s "${f}.tbi" ]] || tabix -f -p vcf "$f"
   done
@@ -316,7 +332,7 @@ fi
 # ===========================================================================
 if [[ "${SKIP_FREEC_REFS:-0}" != "1" ]]; then
   log "=== Control-FREEC SNP positions ==="
-  conda activate resolveome-align
+  conda activate wdl-resolveome-align
   PANEL_DIR="${BASE_DIR}/refs/phasing_panel"
   OUT="${BASE_DIR}/refs/freec_snp_positions"
   for c in $(seq 1 22) X; do
@@ -351,7 +367,7 @@ fi
 # ===========================================================================
 if [[ "${SKIP_PARITY_TOOLS:-0}" != "1" ]]; then
   log "=== Library-complexity QC tools (preseq 2.0.3 bam2mr/gc_extrap) ==="
-  conda env update -n resolveome-align -f "${SCRIPT_DIR}/parity_tools.environment.yml"
+  conda env update -n wdl-resolveome-align -f "${SCRIPT_DIR}/parity_tools.environment.yml"
   TARGET_DIR="${BASE_DIR}/tools/preseq-2.0.3" "${SCRIPT_DIR}/setup_parity_tools.sh"
 else
   log "SKIP_PARITY_TOOLS=1 -- skipping preseq 2.0.3 bam2mr/gc_extrap install"
@@ -388,7 +404,7 @@ fi
 # Final summary
 # ===========================================================================
 log "=== Setup summary ==="
-conda env list | grep -E "resolveome-align|freec|manta_env|mutsig" || true
+conda env list | grep -E "wdl-resolveome-align|freec|manta_env|mutsig" || true
 for f in "${BASE_DIR}/containers/deepvariant.sif" "${BASE_DIR}/containers/vep.r${ENSEMBL_RELEASE}.sif" \
          "${BASE_DIR}/refs/genome/GRCh38.primary.fa" "${BASE_DIR}/tools/beagle/beagle.27Feb25.75f.jar" \
          "${BASE_DIR}/tools/preseq-2.0.3/bin/bam2mr" "${BASE_DIR}/tools/preseq-2.0.3/bin/preseq" \
