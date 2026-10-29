@@ -31,7 +31,11 @@ task CellQcGate {
     File alignment_summary_metrics
     File preseq_result
     File cell_qc_gate_script
-    Float cutoff_preseq = 3500000000
+    # NOTE: must keep a decimal point (3500000000.0, not 3500000000) -- a
+    # bare integer-looking literal this large fails to parse at all under
+    # Cromwell 87's WDL 1.0 grammar even for a Float-typed declaration
+    # (see main.wdl's matching qc_gate_cutoff_preseq for the full story).
+    Float cutoff_preseq = 3500000000.0
     Float cutoff_chimeras = 0.20
     Float cutoff_chrm = 0.20
     Float cutoff_mapd = 0.25
