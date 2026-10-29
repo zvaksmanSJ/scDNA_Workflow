@@ -92,17 +92,17 @@ cd scDNA_Workflow
 #    see setup/setup.sh's own header comment for its BASE_DIR/THREADS/
 #    ENSEMBL_RELEASE/VEP_CACHE_VERSION positional args and its
 #    SKIP_<SECTION>=1 env-var overrides (SKIP_CONDA, SKIP_REFERENCE,
-#    SKIP_KNOWN_SITES, SKIP_CONTAINERS, SKIP_PHASING, SKIP_FREEC_REFS,
+#    SKIP_CONTAINERS, SKIP_PHASING, SKIP_FREEC_REFS,
 #    SKIP_PARITY_TOOLS, SKIP_LINEAGE).
 ./setup/setup.sh
 ```
 
 What this installs, all free/open (no licensed or private dependencies):
-- 4 conda environments: `wdl-resolveome-align`, `freec`, `manta_env`, `mutsig`
+- 3 conda environments: `wdl-resolveome-align`, `freec`, `mutsig`
 - a GRCh38 reference FASTA (Ensembl) + bwa-mem2/samtools/Picard indices
-- GATK's public legacy known-sites bundle
-- stock `google/deepvariant` and `ensemblorg/ensembl-vep` containers, pulled
-  with Apptainer/Singularity (not any licensed BioSkryb image)
+- stock `google/deepvariant`, `ensemblorg/ensembl-vep`, and
+  `biocontainers/manta` containers, pulled with Apptainer/Singularity (not
+  any licensed BioSkryb image)
 - Beagle 5.5 + its public PLINK genetic maps + the 1000 Genomes GRCh38
   high-coverage phasing panel
 - preseq v2.0.3's `bam2mr`/`gc_extrap` pair (GPLv3, fully public --

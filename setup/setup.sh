@@ -5,7 +5,7 @@
 # workflow (../main.wdl) needs, using ONLY free/open tools and resources:
 #   - stock Docker Hub containers (google/deepvariant, ensemblorg/ensembl-vep)
 #     pulled with apptainer/singularity, NOT any proprietary/licensed image
-#   - Ensembl's public GRCh38 FASTA + GATK's public legacy known-sites bundle
+#   - Ensembl's public GRCh38 FASTA
 #   - Beagle 5.5 (Browning lab, GPL) + its public PLINK genetic maps
 #   - the 1000 Genomes GRCh38 high-coverage phased panel (public, EBI FTP)
 #   - Sequoia (TimCoorens/Sequoia, GPLv3, standalone GitHub script) + MPBoot
@@ -43,7 +43,7 @@
 #
 # Individual sections can be skipped with SKIP_<SECTION>=1 env vars, e.g.:
 #   SKIP_CONDA=1 SKIP_CONTAINERS=1 ./setup.sh
-# Recognized: SKIP_CONDA, SKIP_REFERENCE, SKIP_KNOWN_SITES, SKIP_CONTAINERS,
+# Recognized: SKIP_CONDA, SKIP_REFERENCE, SKIP_CONTAINERS,
 #             SKIP_PHASING, SKIP_FREEC_REFS, SKIP_PARITY_TOOLS, SKIP_LINEAGE
 set -euo pipefail
 
@@ -112,7 +112,7 @@ APPTAINER_BIN="$(command -v apptainer || command -v singularity || true)"
 [[ -n "$APPTAINER_BIN" ]] || { err "neither apptainer nor singularity found on PATH (required for DeepVariant/VEP/Manta containers)"; exit 1; }
 log "Using container runtime: ${APPTAINER_BIN}"
 
-mkdir -p "${BASE_DIR}"/{env,refs/{genome,annotation/vep_cache,gatk_known_sites,freec_chrom_fasta,phasing_panel,genetic_maps,freec_snp_positions},containers,tools/{beagle,sequoia,mpboot},logs}
+mkdir -p "${BASE_DIR}"/{env,refs/{genome,annotation/vep_cache,freec_chrom_fasta,phasing_panel,genetic_maps,freec_snp_positions},containers,tools/{beagle,sequoia,mpboot},logs}
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
@@ -159,13 +159,11 @@ dependencies:
   - bioconductor-rsamtools
 YAML
 
-  cat > "${BASE_DIR}/env/manta_env.yml" <<YAML
-name: manta_env
-channels: [conda-forge, bioconda, defaults]
-dependencies:
-  - python=2.7
-  - manta=1.6.0
-YAML
+  # (formerly also created a "manta_env" conda env with python=2.7 +
+  # manta=1.6.0 here -- removed: grepped every wdl/tasks/*.wdl file for
+  # "manta_env" and found zero references. MantaCall (cnv_sv.wdl) only ever
+  # runs Manta via the manta_sif container below; this conda env was never
+  # actually used as a fallback or otherwise, just installed and ignored.)
 
   cat > "${BASE_DIR}/env/mutsig.yml" <<YAML
 name: mutsig
@@ -177,7 +175,7 @@ dependencies:
   - bioconductor-variantannotation
 YAML
 
-  for envname in wdl-resolveome-align freec manta_env mutsig; do
+  for envname in wdl-resolveome-align freec mutsig; do
     if conda env list | awk '{print $1}' | grep -qx "${envname}"; then
       log "conda env '${envname}' already exists, updating (--prune)"
       conda env update -n "${envname}" -f "${BASE_DIR}/env/${envname}.yml" --prune
@@ -201,13 +199,15 @@ if [[ "${SKIP_REFERENCE:-0}" != "1" ]]; then
   FA_GZ="${GENOME_DIR}/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
   FA="${GENOME_DIR}/GRCh38.primary.fa"
 
-  download_if_missing \
-    "https://ftp.ensembl.org/pub/release-${ENSEMBL_RELEASE}/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz" \
-    "${FA_GZ}"
-
   if [[ ! -s "${FA}" ]]; then
+    download_if_missing \
+      "https://ftp.ensembl.org/pub/release-${ENSEMBL_RELEASE}/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz" \
+      "${FA_GZ}"
     log "Decompressing reference FASTA..."
     gunzip -c "${FA_GZ}" > "${FA}"
+    # The compressed download is redundant once decompressed -- nothing
+    # else ever reads FA_GZ again, only FA (checked above) from here on.
+    rm -f "${FA_GZ}"
   else
     echo "[OK] exists: ${FA}"
   fi
@@ -246,31 +246,29 @@ if [[ "${SKIP_REFERENCE:-0}" != "1" ]]; then
   # per-chromosome .fa + .fa.fai files directly, not the freec_chrom_fasta/
   # directory itself as a path component)
   CHROM_FASTA_TAR="${BASE_DIR}/refs/freec_chrom_fasta.tar"
-  [[ -s "${CHROM_FASTA_TAR}" ]] || tar -cf "${CHROM_FASTA_TAR}" -C "${CHROM_FASTA_DIR}" .
+  if [[ ! -s "${CHROM_FASTA_TAR}" ]]; then
+    tar -cf "${CHROM_FASTA_TAR}" -C "${CHROM_FASTA_DIR}" .
+    # chrom_fasta_dir_tar (the WDL input) is this tar, not the directory --
+    # the per-chromosome .fa/.fa.fai files it was built from are redundant
+    # once packed; nothing else reads CHROM_FASTA_DIR again after this.
+    rm -rf "${CHROM_FASTA_DIR}"
+  fi
 else
   log "SKIP_REFERENCE=1 -- skipping reference genome download/indexing"
 fi
 
 # ===========================================================================
-# 3. GATK known sites (dbSNP, Mills indels) -- used by the alignment/BQSR step
+# 3. (formerly GATK known sites / BQSR bundle -- REMOVED, see below)
 # ===========================================================================
-if [[ "${SKIP_KNOWN_SITES:-0}" != "1" ]]; then
-  log "=== GATK known sites ==="
-  conda activate wdl-resolveome-align
-  KNOWN="${BASE_DIR}/refs/gatk_known_sites"
-  set +e
-  download_if_missing "https://storage.googleapis.com/gatk-legacy-bundles/b38/dbsnp_146.hg38.vcf.gz" "${KNOWN}/dbsnp_146.hg38.vcf.gz"
-  download_if_missing "https://storage.googleapis.com/gatk-legacy-bundles/b38/dbsnp_146.hg38.vcf.gz.tbi" "${KNOWN}/dbsnp_146.hg38.vcf.gz.tbi"
-  download_if_missing "https://storage.googleapis.com/gatk-legacy-bundles/b38/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz" "${KNOWN}/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz"
-  download_if_missing "https://storage.googleapis.com/gatk-legacy-bundles/b38/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz.tbi" "${KNOWN}/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz.tbi"
-  set -e
-  for v in "${KNOWN}"/*.vcf.gz; do
-    [[ -e "$v" ]] || continue
-    [[ -s "${v}.tbi" ]] || tabix -f -p vcf "$v" || true
-  done
-else
-  log "SKIP_KNOWN_SITES=1 -- skipping GATK known-sites download"
-fi
+# This section used to download dbSNP + Mills indels from
+# storage.googleapis.com/gatk-legacy-bundles/b38/... for BQSR. Removed
+# because: (1) that bucket path now returns HTTP 404 (dead/moved upstream
+# at Google, confirmed by direct curl check), and (2) even when it worked,
+# nothing in main.wdl or any wdl/tasks/*.wdl file ever consumed these
+# files -- grepped for known_sites/dbsnp/Mills/BQSR across the whole WDL
+# path and found zero references. This pipeline's alignment stage does not
+# perform BQSR at all, so this was dead weight even before the URL broke.
+
 
 # ===========================================================================
 # 4. Containers (free, stock images only -- NOT BioSkryb's licensed images)
@@ -299,25 +297,38 @@ if [[ "${SKIP_CONTAINERS:-0}" != "1" ]]; then
     echo "[OK] exists: ${MANTA_SIF}"
   else
     log "Pulling stock Manta container -> ${MANTA_SIF}"
-    "${APPTAINER_BIN}" pull "${MANTA_SIF}" docker://halllab/manta:latest || \
-      warn "Manta container pull failed -- you can instead use the manta_env conda env directly (see cnv_sv.wdl)"
+    # docker://halllab/manta:latest is dead (confirmed: "manifest unknown" --
+    # the tag no longer exists on Docker Hub). Using the equivalent
+    # biocontainers/bioconda build instead (confirmed live via quay.io's own
+    # API: manifest resolves, 103MB image) -- same manta=1.6.0 build string
+    # (py27h9948957_6) this project's own bioconda channel would resolve to.
+    "${APPTAINER_BIN}" pull "${MANTA_SIF}" docker://quay.io/biocontainers/manta:1.6.0--py27h9948957_6 || \
+      warn "Manta container pull failed -- MantaCall (cnv_sv.wdl) has no fallback and requires this container to exist"
   fi
 
   # VEP cache (needed by the VEP container at runtime; downloaded separately
   # since the container image itself does not bundle species caches)
   VEP_CACHE_DIR="${BASE_DIR}/refs/annotation/vep_cache"
   VEP_CACHE_TAR="${VEP_CACHE_DIR}/homo_sapiens_vep_${VEP_CACHE_VERSION}_GRCh38.tar.gz"
-  if [[ -d "${VEP_CACHE_DIR}/homo_sapiens" ]]; then
-    echo "[OK] exists: ${VEP_CACHE_DIR}/homo_sapiens"
+  # main.wdl takes vep_cache_dir_tar as a single tarball input -- this is the
+  # ONLY one of these 3 forms (raw download / extracted dir / repacked tar)
+  # that's ever actually read by anything downstream, so gate on IT existing
+  # (not the extracted dir, as a previous version of this script did) and
+  # clean up the other two once it's built -- they were otherwise observed
+  # to triple the real ~25GB cost of this cache to ~75GB on disk for no
+  # benefit, with nothing ever reading the raw tar.gz or extracted dir again.
+  VEP_CACHE_REPACK="${VEP_CACHE_DIR}/vep_cache.tar"
+  if [[ -s "${VEP_CACHE_REPACK}" ]]; then
+    echo "[OK] exists: ${VEP_CACHE_REPACK}"
   else
     download_if_missing \
       "https://ftp.ensembl.org/pub/release-${VEP_CACHE_VERSION}/variation/indexed_vep_cache/homo_sapiens_vep_${VEP_CACHE_VERSION}_GRCh38.tar.gz" \
       "${VEP_CACHE_TAR}"
     tar -xzf "${VEP_CACHE_TAR}" -C "${VEP_CACHE_DIR}"
+    rm -f "${VEP_CACHE_TAR}"
+    tar -cf "${VEP_CACHE_REPACK}" -C "${VEP_CACHE_DIR}" homo_sapiens
+    rm -rf "${VEP_CACHE_DIR}/homo_sapiens"
   fi
-  # main.wdl takes vep_cache_dir_tar as a single tarball input -- repackage
-  VEP_CACHE_REPACK="${VEP_CACHE_DIR}/vep_cache.tar"
-  [[ -s "${VEP_CACHE_REPACK}" ]] || tar -cf "${VEP_CACHE_REPACK}" -C "${VEP_CACHE_DIR}" homo_sapiens
 
   # SnpEff database (downloaded through the conda env's own snpEff binary)
   conda activate wdl-resolveome-align
@@ -339,9 +350,16 @@ if [[ "${SKIP_PHASING:-0}" != "1" ]]; then
   download_if_missing "https://faculty.washington.edu/browning/beagle/beagle.27Feb25.75f.jar" "${BEAGLE_JAR}"
 
   MAP_ZIP="${BASE_DIR}/refs/genetic_maps/plink.GRCh38.map.zip"
-  download_if_missing "https://bochet.gcc.biostat.washington.edu/beagle/genetic_maps/plink.GRCh38.map.zip" "${MAP_ZIP}"
   if [[ ! -d "${BASE_DIR}/refs/genetic_maps/chr_in_chrom_field" ]]; then
-    (cd "${BASE_DIR}/refs/genetic_maps" && unzip -o -q "$(basename "${MAP_ZIP}")")
+    download_if_missing "https://bochet.gcc.biostat.washington.edu/beagle/genetic_maps/plink.GRCh38.map.zip" "${MAP_ZIP}"
+    # The zip also contains a "no_chr_in_chrom_field/" variant -- only
+    # "chr_in_chrom_field/" is ever referenced (example_inputs.json,
+    # build_inputs_json.py), so extract just that subset rather than the
+    # whole archive, to avoid writing ~85MB of never-used files to disk.
+    (cd "${BASE_DIR}/refs/genetic_maps" && unzip -o -q "$(basename "${MAP_ZIP}")" "chr_in_chrom_field/*")
+    rm -f "${MAP_ZIP}"
+  else
+    echo "[OK] exists: ${BASE_DIR}/refs/genetic_maps/chr_in_chrom_field"
   fi
 
   PANEL_DIR="${BASE_DIR}/refs/phasing_panel"
@@ -444,7 +462,7 @@ fi
 # Final summary
 # ===========================================================================
 log "=== Setup summary ==="
-conda env list | grep -E "wdl-resolveome-align|freec|manta_env|mutsig" || true
+conda env list | grep -E "wdl-resolveome-align|freec|mutsig" || true
 for f in "${BASE_DIR}/containers/deepvariant.sif" "${BASE_DIR}/containers/vep.r${ENSEMBL_RELEASE}.sif" \
          "${BASE_DIR}/refs/genome/GRCh38.primary.fa" "${BASE_DIR}/tools/beagle/beagle.27Feb25.75f.jar" \
          "${BASE_DIR}/tools/preseq-2.0.3/bin/bam2mr" "${BASE_DIR}/tools/preseq-2.0.3/bin/preseq" \
