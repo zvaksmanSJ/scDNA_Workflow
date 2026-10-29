@@ -145,7 +145,19 @@ dependencies:
   - gatk4=4.6.2.0
   - bedtools
   - pandas
-  - matplotlib
+  # matplotlib (the full metapackage) depends on pyqt>=5.10, which pulls in
+  # the entire Qt5/X11/Wayland GUI toolkit stack (wayland, xorg-libx11,
+  # xcb-util-*, xkeyboard-config, ...) as solver candidates -- confirmed
+  # this alone is what made conda's "Solving environment" step for the
+  # later parity_tools.environment.yml update take 3+ hours (still only in
+  # the pre-solve MatchSpec-parsing phase after 10 minutes) and eventually
+  # hit setup.sh's own LSF walltime. Every matplotlib call in this
+  # pipeline's own scripts (extra_methods/*.py, python_lsf_pipeline/*.py)
+  # explicitly does matplotlib.use("Agg") for headless file output -- none
+  # ever show an interactive GUI window -- so matplotlib-base (same
+  # plotting API, no Qt/GUI backend, no X11 dependency fan-out) is a
+  # correct, much lighter drop-in replacement, not a functionality cut.
+  - matplotlib-base
   - numpy
 YAML
 

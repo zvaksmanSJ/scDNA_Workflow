@@ -3,14 +3,22 @@ set -euo pipefail
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate wdl-resolveome-align
-for tool in fastp bedtools preseq; do
+# NOTE: deliberately NOT checking for a plain "preseq" binary here -- that
+# package used to be in parity_tools.environment.yml but was removed (every
+# build requires zlib<1.3, conflicting with samtools=1.20's newer zlib, and
+# nothing in this pipeline ever invokes a bare `preseq` call anyway -- see
+# that file's own comment). This script builds its own preseq 2.0.3 from
+# source below regardless, so requiring the (now absent) conda one first
+# would only block that unnecessarily.
+for tool in fastp bedtools; do
   command -v "$tool" >/dev/null || {
     echo "[ERROR] Missing $tool. Install the additions in parity_tools.environment.yml into wdl-resolveome-align." >&2
     exit 2
   }
 done
 
-# Keep the reference's bam2mr/gc_extrap pair separate from the installed preseq 3.
+# Build our own bam2mr/gc_extrap pair rather than relying on bioconda's
+# newer preseq package.
 #
 # This builds preseq v2.0.3 (GPLv3, fully public -- https://github.com/
 # smithlabcode/preseq, also on bioconda) directly from its official GitHub
@@ -19,9 +27,9 @@ done
 # because that release's `bam2mr`/`gc_extrap` CLI is what this project's
 # pipeline (and BioSkryb's own ResolveDNA protocol) was built against --
 # preseq 3.x renamed/restructured this command (`bam2mr` -> `to-mr`) in an
-# incompatible way, so the newer bioconda `preseq` package (also installed
-# in this same environment for anything else that wants it) cannot simply
-# be substituted here.
+# incompatible way, so the newer bioconda `preseq` package cannot simply be
+# substituted here -- which is also why that package isn't installed into
+# this environment at all (see parity_tools.environment.yml's own comment).
 #
 # TARGET_DIR defaults to this project's own existing resolveome_align/
 # installation (preserving this script's original, already-in-production-
