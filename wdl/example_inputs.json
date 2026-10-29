@@ -64,7 +64,7 @@
   "_comment_LINEAGE": "produced by setup.sh section 7",
   "ResolveOmeDnaWorkflow.sequoia_build_phylogeny_script": "wdl_runtime/tools/sequoia/Sequoia/build_phylogeny.R",
   "ResolveOmeDnaWorkflow.verify_lineage_r_script": "extra_methods/verify_lineage.R",
-  "ResolveOmeDnaWorkflow.mpboot_binary": "wdl_runtime/tools/mpboot/mpboot-1.1.0-Linux/bin/mpboot",
+  "ResolveOmeDnaWorkflow.mpboot_binary": "wdl_runtime/tools/mpboot/mpboot-1.2-Linux/bin/mpboot",
   "_comment_EXTRA_METHODS": "these already exist in extra_methods/ -- never produced by setup.sh, just referenced",
   "ResolveOmeDnaWorkflow.make_region_chunks_script": "wdl/scripts/make_region_chunks.py",
   "ResolveOmeDnaWorkflow.mapd_qc_script": "extra_methods/mapd_qc.py",

@@ -470,12 +470,27 @@ if [[ "${SKIP_LINEAGE:-0}" != "1" ]]; then
   fi
 
   MPBOOT_DIR="${BASE_DIR}/tools/mpboot"
-  MPBOOT_TGZ="${MPBOOT_DIR}/mpboot-1.1.0-linux.tar.gz"
-  if [[ ! -s "${MPBOOT_DIR}/mpboot-1.1.0-Linux/bin/mpboot" ]]; then
+  MPBOOT_TGZ="${MPBOOT_DIR}/mpboot-1.2-Linux.tar.gz"
+  # v1.1.0's release/asset (used here previously) was removed upstream --
+  # confirmed via GitHub's own releases API that only v1.1.1 and v1.2 now
+  # exist, each as "mpboot-avx-<version>-Linux.tar.gz" containing a single
+  # "mpboot-avx" binary directly (not the old "mpboot-<version>-Linux/bin/
+  # mpboot" layout). Using v1.2 (latest; changelog is bugfixes/feature
+  # additions only, not behavior-breaking for the base ML/bootstrap usage
+  # this project needs) and symlinking the renamed binary into the SAME
+  # bin/mpboot path this project's own example_inputs.json/mpboot_binary
+  # input already expects, so nothing downstream needs to change -- the
+  # binary name itself matters because Sequoia's own build_phylogeny.R
+  # (downloaded above) invokes it by that literal name.
+  if [[ ! -s "${MPBOOT_DIR}/mpboot-1.2-Linux/bin/mpboot" ]]; then
     download_if_missing \
-      "https://github.com/diepthihoang/mpboot/releases/download/v1.1.0/mpboot-1.1.0-linux.tar.gz" \
+      "https://github.com/diepthihoang/mpboot/releases/download/v1.2/mpboot-avx-1.2-Linux.tar.gz" \
       "${MPBOOT_TGZ}"
     tar -xzf "${MPBOOT_TGZ}" -C "${MPBOOT_DIR}"
+    rm -f "${MPBOOT_TGZ}"
+    mkdir -p "${MPBOOT_DIR}/mpboot-1.2-Linux/bin"
+    ln -sfn "${MPBOOT_DIR}/mpboot-avx-1.2-Linux/mpboot-avx" "${MPBOOT_DIR}/mpboot-1.2-Linux/bin/mpboot"
+    chmod +x "${MPBOOT_DIR}/mpboot-avx-1.2-Linux/mpboot-avx"
   fi
   log "Lineage tools ready: ${SEQUOIA_DIR}/Sequoia, ${MPBOOT_DIR}"
   log "Use --sequoia-script \${SEQUOIA_DIR}/Sequoia/build_phylogeny.R --mpboot-path <mpboot bin dir> with lineage_track.py/verify_lineage.py"
