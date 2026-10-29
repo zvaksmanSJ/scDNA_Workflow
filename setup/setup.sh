@@ -74,9 +74,27 @@ download_if_missing() {
   # where it left off on every attempt (curl creates it fresh if absent),
   # and the outer loop gives it repeated fresh attempts beyond curl's own
   # internal --retry, each one only needing to cover the remaining bytes.
+  #
+  # Separately: a .gz/.vcf.gz output that curl reports as fully downloaded
+  # can still be silently corrupt (observed in practice -- a background
+  # phasing-panel download was left truncated-but-non-empty by an LSF
+  # walltime kill of the whole script, yet still ended up at the final
+  # "$out" name and passed this function's own `[[ -s "$out" ]]` skip-check
+  # on the next run; it only surfaced later as a tabix indexing crash).
+  # For .gz outputs, verify with `gzip -t` before trusting curl's own
+  # success and finalizing via mv -- on failure, discard "${out}.part"
+  # entirely (not just resume) since corruption may be mid-stream, not
+  # only at the tail, so resuming from the current byte offset would not
+  # necessarily fix it.
   local attempt
   for attempt in 1 2 3 4 5 6 7 8; do
     if curl -fL --retry 3 --retry-all-errors -C - -o "${out}.part" "$url"; then
+      if [[ "$out" == *.gz ]] && ! gzip -t "${out}.part" 2>/dev/null; then
+        warn "downloaded file failed gzip integrity check (possible silent corruption) -- discarding and retrying from scratch: $url"
+        rm -f "${out}.part"
+        sleep 15
+        continue
+      fi
       mv "${out}.part" "$out"
       return 0
     fi
