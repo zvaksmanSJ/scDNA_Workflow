@@ -142,6 +142,17 @@ def main() -> None:
                           "set for all three -- the bundled wdl/example_inputs.json deliberately does NOT "
                           "(see this script's own module docstring for why).")
     ap.add_argument("--output", required=True, type=Path)
+    ap.add_argument("--output-dir", type=Path, default=None,
+                     help="Where you want the FINAL, organized pipeline results to land once the run "
+                          "completes (per_cell/<sample_id>/... etc, per organize_outputs.py's own "
+                          "--dest). This has NO effect on inputs.json itself or on Cromwell -- WDL/"
+                          "Cromwell has no generic 'write results here' input, and main.wdl is not "
+                          "modified by this flag. Recorded now, before the run, purely so the choice is "
+                          "locked in early and doesn't need to be re-specified/remembered later: creates "
+                          "the directory if needed, and writes its absolute path to a small sidecar file "
+                          "next to --output (<output>.output_dir) for organize_outputs.py's --dest to be "
+                          "read from later -- never embedded inside inputs.json itself, since Cromwell "
+                          "does not tolerate stray unrecognized keys in that file.")
     args = ap.parse_args()
 
     base = json.loads(args.base.read_text())
@@ -167,6 +178,14 @@ def main() -> None:
 
     args.output.write_text(json.dumps(base, indent=2) + "\n")
     print(f"[DONE] wrote {args.output} with {len(sample_ids)} cell(s): {', '.join(sample_ids)}")
+
+    if args.output_dir:
+        resolved = args.output_dir.resolve()
+        resolved.mkdir(parents=True, exist_ok=True)
+        sidecar = args.output.with_suffix(args.output.suffix + ".output_dir")
+        sidecar.write_text(str(resolved) + "\n")
+        print(f"[OK] Created results directory and recorded it for later use: {resolved}")
+        print(f"     (saved to {sidecar}; pass this same path as organize_outputs.py's --dest once the run completes)")
 
 
 if __name__ == "__main__":

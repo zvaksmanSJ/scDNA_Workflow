@@ -69,8 +69,16 @@ python3 wdl/scripts/build_inputs_json.py \
   --manifest my_cells.tsv \
   --base wdl/example_inputs.json \
   --donor-id my_cohort \
-  --output inputs.json
+  --output inputs.json \
+  --output-dir /path/to/final/results
 ```
+
+`--output-dir` is optional and has no effect on `inputs.json` itself or on
+Cromwell (WDL has no generic "write results here" input) -- it just creates
+that directory now and records it in a small sidecar file
+(`inputs.json.output_dir`) so your chosen destination is locked in early,
+for you to pass as `organize_outputs.py`'s own `--dest` once the run
+completes (step 3 below).
 
 This merges your FASTQ list into `wdl/example_inputs.json`'s fixed
 infrastructure paths (reference, containers, Beagle panel, script paths --
