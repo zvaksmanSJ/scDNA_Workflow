@@ -49,6 +49,19 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="${1:-${SCRIPT_DIR}/../wdl_runtime}"
+# Absolutize BASE_DIR immediately, regardless of whether it was passed as a
+# relative or absolute path. Without this, a relative BASE_DIR (e.g. the
+# literal "../wdl_runtime" positional arg, as opposed to this variable's own
+# relative-to-SCRIPT_DIR *default*) breaks things that don't share the
+# invocation-time cwd's frame of reference -- confirmed in practice: the
+# Sequoia/MPBoot step's `ln -sfn "$TARGET/bin/bam2mr" "$CONDA_PREFIX/bin/
+# bam2mr"` created a symlink whose *stored* relative target is resolved
+# relative to the symlink's OWN directory (deep inside the conda env's
+# bin/), not the cwd setup.sh was invoked from -- producing a silently
+# dangling symlink, which then failed `test -x` under `set -e` with no
+# visible error message at all.
+mkdir -p "$BASE_DIR"
+BASE_DIR="$(cd -- "$BASE_DIR" && pwd)"
 THREADS="${2:-16}"
 ENSEMBL_RELEASE="${3:-111}"
 VEP_CACHE_VERSION="${4:-111}"
