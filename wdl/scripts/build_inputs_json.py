@@ -49,6 +49,19 @@ to contain for them:
 --skip-autosome-regen to restore the old copy-through-unchanged behavior
 (e.g. if you've installed these files somewhere setup.sh doesn't expect and
 already hand-built a complete --base with every chromosome present).
+
+ALSO -- every other "wdl_runtime/..." relative path already in --base
+(ref_fasta/indices, containers, Beagle jar, Sequoia/MPBoot, etc.) is
+likewise rewritten to an absolute path under --wdl-runtime-dir. These are
+bare relative paths in wdl/example_inputs.json, which only resolve
+correctly if setup.sh was run with its own default BASE_DIR (a
+wdl_runtime/ directory living INSIDE the repo) AND Cromwell is always
+invoked from exactly the repo root -- neither is guaranteed (setup.sh's
+own BASE_DIR is documented as configurable, e.g. to install outside the
+repo for disk-space/quota reasons). This rewrite always runs, unlike the
+autosome-Map regeneration above, since there's no flag to skip it that
+would ever be useful -- an absolute path is never less correct than a
+relative one that only works from one specific directory.
 """
 from __future__ import annotations
 
@@ -98,6 +111,58 @@ def regenerate_autosome_maps(wdl_runtime_dir: Path) -> dict[str, dict[str, str]]
         f"{WORKFLOW_NAME}.phasing_ref_panel_tbi_by_chrom": panel_tbi_by_chrom,
         f"{WORKFLOW_NAME}.genetic_map_by_chrom": map_by_chrom,
     }
+
+
+def rewrite_wdl_runtime_paths(base: dict, wdl_runtime_dir: Path) -> int:
+    """Rewrite every "wdl_runtime/..." relative path in --base (reference
+    FASTA/indices, containers, Beagle jar, Sequoia/MPBoot, etc. -- see
+    wdl/example_inputs.json's own README_PREFIX comments) to an absolute
+    path under the real --wdl-runtime-dir, in place. Handles both plain
+    string values and Map[String, File]-shaped nested dicts (e.g. the 3
+    phasing Maps when --skip-autosome-regen left them copied through
+    unchanged from --base, rather than regenerated as absolute paths
+    already). Returns how many individual path values were rewritten.
+
+    wdl/example_inputs.json hardcodes these as bare relative paths
+    ("wdl_runtime/refs/genome/..."), which only resolve correctly if (a)
+    Cromwell is invoked from exactly the repo root every time, AND (b)
+    setup.sh was run with its own default BASE_DIR (a wdl_runtime/ directory
+    living INSIDE the repo, as a sibling of main.wdl) -- not the case for
+    every valid setup.sh invocation (its own BASE_DIR positional arg is
+    explicitly documented as configurable, and a BASE_DIR outside the repo
+    entirely, e.g. for disk-space/quota reasons, is a real, supported
+    choice). Confirmed via a live run: every task failed at "Failed command
+    instantiation" / "Localization ... has failed" the moment wdl_runtime
+    lived as a sibling of the repo instead of inside it, even though
+    --wdl-runtime-dir had already been passed correctly for the 3 phasing
+    Maps above -- those are the only inputs the old code made robust to
+    this; every other wdl_runtime-relative path in --base was still copied
+    through unchanged and silently wrong. This closes that gap for all of
+    them, unconditionally (not just when --wdl-runtime-dir differs from the
+    literal default), since an absolute path is never less correct than a
+    bare relative one that only works from one specific invocation
+    directory."""
+    prefix = "wdl_runtime/"
+    abs_dir = wdl_runtime_dir.resolve()
+
+    def rewrite_one(value: str) -> str:
+        return str(abs_dir / value[len(prefix):]) if value.startswith(prefix) else value
+
+    rewritten = 0
+    for key, value in list(base.items()):
+        if isinstance(value, str) and value.startswith(prefix):
+            base[key] = rewrite_one(value)
+            rewritten += 1
+        elif isinstance(value, dict):
+            new_dict = {}
+            for sub_key, sub_value in value.items():
+                if isinstance(sub_value, str) and sub_value.startswith(prefix):
+                    new_dict[sub_key] = rewrite_one(sub_value)
+                    rewritten += 1
+                else:
+                    new_dict[sub_key] = sub_value
+            base[key] = new_dict
+    return rewritten
 
 
 def read_manifest(path: Path) -> tuple[list[str], list[str], list[str]]:
@@ -175,6 +240,10 @@ def main() -> None:
         autosome_maps = regenerate_autosome_maps(args.wdl_runtime_dir)
         base.update(autosome_maps)
         print(f"[OK] Regenerated complete chr1-22 phasing/genetic-map maps from {args.wdl_runtime_dir}")
+
+    n_rewritten = rewrite_wdl_runtime_paths(base, args.wdl_runtime_dir)
+    print(f"[OK] Rewrote {n_rewritten} wdl_runtime-relative path(s) in --base to absolute paths under "
+          f"{args.wdl_runtime_dir.resolve()}")
 
     args.output.write_text(json.dumps(base, indent=2) + "\n")
     print(f"[DONE] wrote {args.output} with {len(sample_ids)} cell(s): {', '.join(sample_ids)}")
