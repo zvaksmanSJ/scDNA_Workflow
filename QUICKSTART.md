@@ -69,16 +69,8 @@ python3 wdl/scripts/build_inputs_json.py \
   --manifest my_cells.tsv \
   --base wdl/example_inputs.json \
   --donor-id my_cohort \
-  --output inputs.json \
-  --output-dir /path/to/final/results
+  --output inputs.json
 ```
-
-`--output-dir` is optional and has no effect on `inputs.json` itself or on
-Cromwell (WDL has no generic "write results here" input) -- it just creates
-that directory now and records it in a small sidecar file
-(`inputs.json.output_dir`) so your chosen destination is locked in early,
-for you to pass as `organize_outputs.py`'s own `--dest` once the run
-completes (step 3 below).
 
 This merges your FASTQ list into `wdl/example_inputs.json`'s fixed
 infrastructure paths (reference, containers, Beagle panel, script paths --
@@ -105,11 +97,33 @@ java -Dconfig.file=wdl/cromwell_local.conf -jar cromwell-87.jar run \
 ```
 
 Run this from the repo root (`main.wdl`'s own `import` statements are
-relative to that location). `cromwell_local.conf` runs every task as a
-local subprocess -- fine for a smoke test or a couple of cells. For a real
-multi-cell cohort on this cluster's LSF scheduler instead, swap in
-`wdl/cromwell_lsf.conf` -- see `wdl/README.md`'s "Running at LSF scale
-(production)" section (only the `-Dconfig.file=` flag changes).
+relative to that location). **`cromwell_local.conf` runs every task as a
+subprocess on whatever host runs this `java` command** -- fine for a
+smoke test or a couple of cells, but if that host is a shared login/head
+node, every alignment/variant-calling/etc. task runs there too, not
+spread across the cluster.
+
+**For a real multi-cell cohort, or to avoid running compute on a shared
+head node at all, use `wdl/cromwell_lsf.conf` instead** -- it submits
+every task as its own real `bsub` job, matching this cluster's own `bsub`
+conventions. Only the `-Dconfig.file=` flag changes (same `inputs.json`/
+`outputs.json`, same everything else):
+
+```bash
+java -Dconfig.file=wdl/cromwell_lsf.conf -jar cromwell-87.jar run \
+  main.wdl -i inputs.json -m outputs.json
+```
+
+**Live-verified**: a real minimal task submitted through this exact
+config was confirmed to actually execute on a compute node (not the host
+running Cromwell), with `runtime { cpu: ... }` correctly becoming
+`bsub -n <N>` (checked via `nproc` inside the task), completing and
+reporting back to Cromwell normally. The `java` process above is still
+fine to run on a login node either way -- with `cromwell_lsf.conf` it's
+just a lightweight orchestrator polling LSF for job status, not where the
+actual compute happens. See `wdl/README.md`'s "Running at LSF scale
+(production)" section for more (concurrent-job-limit, per-task walltime
+overrides, etc.).
 
 ## 5. Organize outputs and open the dashboard
 
