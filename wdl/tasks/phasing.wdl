@@ -66,7 +66,10 @@ task PhaseChromosome {
     File phased_chrom_vcf = "~{sample_id}.phased.chr~{chrom}.vcf.gz"
     File phased_chrom_vcf_csi = "~{sample_id}.phased.chr~{chrom}.vcf.gz.csi"
   }
-  runtime { cpu: threads, memory: "~{mem_gb} GB" }
+  runtime {
+    cpu: threads
+    memory: "~{mem_gb} GB"
+  }
 }
 
 task ConcatPhasedChromosomes {
@@ -102,5 +105,8 @@ PYEOF
     File phased_vcf = "~{sample_id}.phased.vcf.gz"
     File phased_vcf_csi = "~{sample_id}.phased.vcf.gz.csi"
   }
-  runtime { cpu: 2, memory: "8 GB" }
+  runtime {
+    cpu: 2
+    memory: "8 GB"
+  }
 }

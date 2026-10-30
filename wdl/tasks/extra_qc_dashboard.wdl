@@ -47,7 +47,10 @@ PYEOF
     python3 ~{mapd_qc_script} --cnv-dir cnv_staged --manifest manifest.tsv --output mapd_qc.tsv
   >>>
   output { File mapd_qc_tsv = "mapd_qc.tsv" }
-  runtime { cpu: 1, memory: "4 GB" }
+  runtime {
+    cpu: 1
+    memory: "4 GB"
+  }
 }
 
 # False-discovery-rate estimate for the small-variant calls, cross-checked
@@ -83,7 +86,10 @@ PYEOF
       --manifest manifest.tsv --output fdr_estimate.tsv
   >>>
   output { File fdr_estimate_tsv = "fdr_estimate.tsv" }
-  runtime { cpu: 1, memory: "4 GB" }
+  runtime {
+    cpu: 1
+    memory: "4 GB"
+  }
 }
 
 # Recurrent-artifact panel: flags variant sites that recur suspiciously
@@ -120,7 +126,10 @@ PYEOF
     File summary_tsv = "artifact_panel_summary.tsv"
     File sites_tsv = "artifact_panel_sites.tsv"
   }
-  runtime { cpu: 2, memory: "8 GB" }
+  runtime {
+    cpu: 2
+    memory: "8 GB"
+  }
 }
 
 # Cohort-wide summary table over Stage 4 (phasing.wdl)'s per-cell phased VCFs.
@@ -151,7 +160,10 @@ PYEOF
       --output phasing_summary.tsv
   >>>
   output { File phasing_summary_tsv = "phasing_summary.tsv" }
-  runtime { cpu: 1, memory: "4 GB" }
+  runtime {
+    cpu: 1
+    memory: "4 GB"
+  }
 }
 
 # Cohort-wide LOH + ploidy summary tables, PLUS the cross-cell LOH-by-
@@ -198,7 +210,10 @@ PYEOF
     File loh_by_region_tsv = "loh_by_region.tsv"
     File loh_by_region_png = "loh_by_region_heatmap.png"
   }
-  runtime { cpu: 2, memory: "8 GB" }
+  runtime {
+    cpu: 2
+    memory: "8 GB"
+  }
 }
 
 # Clean per-cell QC overview table + figure, parsed directly out of
@@ -228,7 +243,10 @@ task QcSummary {
     File qc_summary_tsv = "qc_summary.tsv"
     File qc_overview_png = "qc_overview.png"
   }
-  runtime { cpu: 1, memory: "4 GB" }
+  runtime {
+    cpu: 1
+    memory: "4 GB"
+  }
 }
 
 # COSMIC mutational-signature refitting via MutationalPatterns (R/
@@ -256,7 +274,10 @@ task MutationalSignatures {
     File mutation_spectrum_png = "mutational_signatures_out/mutation_spectrum_96.png"
     File signature_barplot_png = "mutational_signatures_out/signature_contribution_barplot.png"
   }
-  runtime { cpu: 2, memory: "16 GB" }
+  runtime {
+    cpu: 2
+    memory: "16 GB"
+  }
 }
 
 # The final deliverable: builds one tabbed HTML dashboard (Overview/QC/
@@ -318,5 +339,8 @@ task BuildDashboard {
       --multiqc-relpath ~{multiqc_relpath} --output dashboard.html
   >>>
   output { File dashboard_html = "dashboard.html" }
-  runtime { cpu: 1, memory: "4 GB" }
+  runtime {
+    cpu: 1
+    memory: "4 GB"
+  }
 }

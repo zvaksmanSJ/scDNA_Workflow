@@ -40,6 +40,9 @@ task MultiQC {
     File report_html = "multiqc_out/multiqc_report.html"
     Array[File] data = glob("multiqc_out/multiqc_data/*")
   }
-  runtime { cpu: 2, memory: "8 GB" }
+  runtime {
+    cpu: 2
+    memory: "8 GB"
+  }
 }
 

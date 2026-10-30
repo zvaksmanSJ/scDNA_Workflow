@@ -80,7 +80,10 @@ PYEOF
     File nv_matrix = glob("lineage_out/*_NV.tsv")[0]
     File nr_matrix = glob("lineage_out/*_NR.tsv")[0]
   }
-  runtime { cpu: 4, memory: "32 GB" }
+  runtime {
+    cpu: 4
+    memory: "32 GB"
+  }
 }
 
 task VerifyLineage {
@@ -154,5 +157,8 @@ PYEOF
     File bootstrap_support_report = "verification_out/bootstrap_support_report.tsv"
     File verification_summary_json = "verification_out/verification_summary.json"
   }
-  runtime { cpu: 4, memory: "32 GB" }
+  runtime {
+    cpu: 4
+    memory: "32 GB"
+  }
 }

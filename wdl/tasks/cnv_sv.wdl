@@ -68,7 +68,10 @@ task CnvkitCall {
     Array[File] plots = glob("cnv_out/*.pdf")
     File genemetrics = "cnv_out/~{sample_id}.cnvkit.genemetrics.tsv"
   }
-  runtime { cpu: threads, memory: "16 GB" }
+  runtime {
+    cpu: threads
+    memory: "16 GB"
+  }
 }
 
 # Manta (free, GPLv3, Illumina/bioconda) -- germline/diploid structural-
@@ -120,5 +123,8 @@ task MantaCall {
   output {
     File manta_vcf = "~{sample_id}.manta.vcf.gz"
   }
-  runtime { cpu: threads, memory: "16 GB" }
+  runtime {
+    cpu: threads
+    memory: "16 GB"
+  }
 }

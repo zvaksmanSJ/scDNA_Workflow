@@ -100,5 +100,8 @@ EOF
     File ratio = "~{sample_id}.dedup.bam_ratio.txt"
     File info = "~{sample_id}.dedup.bam_info.txt"
   }
-  runtime { cpu: threads, memory: "32 GB" }
+  runtime {
+    cpu: threads
+    memory: "32 GB"
+  }
 }

@@ -45,7 +45,10 @@ task PlanChunks {
   output {
     Array[Array[String]] chunks = read_tsv("chunks.tsv")
   }
-  runtime { cpu: 1, memory: "2 GB" }
+  runtime {
+    cpu: 1
+    memory: "2 GB"
+  }
 }
 
 # Runs once per (cell, genomic chunk) pair -- small-variant calling via
@@ -229,7 +232,10 @@ task MergeVcfChunks {
     File merged_vcf = "~{sample_id}~{out_suffix}"
     File merged_vcf_csi = "~{sample_id}~{out_suffix}.csi"
   }
-  runtime { cpu: merge_parallel_jobs, memory: "16 GB" }
+  runtime {
+    cpu: merge_parallel_jobs
+    memory: "16 GB"
+  }
 }
 
 # Runs once per (cell, genomic chunk) pair -- VEP annotation (free,
@@ -296,7 +302,10 @@ task VepAnnotateChunk {
   output {
     File vep_chunk_vcf = "~{sample_id}.deepvariant.~{chunk_id}.vep.vcf.gz"
   }
-  runtime { cpu: threads, memory: "16 GB" }
+  runtime {
+    cpu: threads
+    memory: "16 GB"
+  }
 }
 
 task SnpEffAnnotate {
@@ -341,5 +350,8 @@ task SnpEffAnnotate {
     File snpeff_html = "~{sample_id}.snpeff.html"
     File snpeff_genes_csv = "~{sample_id}.snpeff.genes.csv"
   }
-  runtime { cpu: 1, memory: "~{snpeff_heap_mb / 1000 + 2} GB" }
+  runtime {
+    cpu: 1
+    memory: "~{snpeff_heap_mb / 1000 + 2} GB"
+  }
 }

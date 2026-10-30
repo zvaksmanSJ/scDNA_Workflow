@@ -91,5 +91,8 @@ task CellQcGate {
     String qc_status = read_string("~{sample_id}.qc_gate_status.txt")
     Boolean qc_pass = qc_status != "FAIL"
   }
-  runtime { cpu: threads, memory: "16 GB" }
+  runtime {
+    cpu: threads
+    memory: "16 GB"
+  }
 }
