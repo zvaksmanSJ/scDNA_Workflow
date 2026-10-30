@@ -220,11 +220,14 @@ gets a 48-hour LSF walltime by default (comfortably more than any single
 cell/chunk/chromosome unit of work should need, since the WDL already
 parallelizes each stage down to that granularity); override per task with
 `runtime { lsf_walltime: "72:00" }` in the relevant `tasks/*.wdl` file if a
-specific stage genuinely needs longer. **`cromwell_lsf.conf` was written
-against Cromwell's own documented LSF backend pattern and this cluster's
-proven `bsub` conventions, but has NOT been live-tested against a real
-`bsub` submission** (doing so would itself submit a real LSF job) -- if you
-want extra confidence before a full cohort run, consider first trying it
+specific stage genuinely needs longer. **Live-tested with a real minimal
+task run through a real `bsub` submission**: confirmed the task actually
+executed on a compute node (not the host running Cromwell/the LSF head
+node), confirmed `runtime { cpu: ... }` is correctly substituted into
+`bsub -n` (verified via `nproc` inside the task matching the requested
+CPU count), and confirmed the job completes and reports back to Cromwell
+normally through LSF's own job-ID/`bjobs` polling. If you want extra
+confidence before a full cohort run anyway, consider first trying it
 against a minimal 1-2-cell `inputs.json`.
 
 ## What was NOT run this session (and why)
