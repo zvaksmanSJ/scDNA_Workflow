@@ -56,8 +56,13 @@ task CellQcGate {
         --output-dir cnv_for_gate \
         --processes ~{threads}
     else
+      # -n with no arguments tells CNVkit to build a flat reference (no
+      # matched normal) instead of requiring -r/--reference; omitting it
+      # makes `batch` reject the invocation outright with "Option -n/--normal
+      # must be given to build a new reference if -r/--reference is not used."
       cnvkit.py batch ~{bam} \
         --method wgs \
+        -n \
         --fasta ~{ref_fasta} \
         --output-dir cnv_for_gate \
         --processes ~{threads}
