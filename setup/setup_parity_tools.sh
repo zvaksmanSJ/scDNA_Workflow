@@ -45,9 +45,38 @@ if [[ ! -x "$TARGET/bin/bam2mr" || ! -x "$TARGET/bin/preseq" ]]; then
     https://github.com/smithlabcode/preseq/releases/download/v2.0.3/preseq_v2.0.3.tar.bz2 \
     --output "$BUILD/preseq_v2.0.3.tar.bz2"
   tar -xjf "$BUILD/preseq_v2.0.3.tar.bz2" -C "$BUILD"
+
+  # Build fully static (glibc + GSL + zlib all statically linked). This
+  # script typically runs interactively on a login/head node, but the
+  # resulting binaries are later executed via LSF on whatever compute node
+  # the scheduler picks -- on a cluster with a heterogeneous node fleet
+  # (mixed RHEL7/8/9 images etc.) a dynamically-linked build only works on
+  # nodes with a glibc new enough to match the login node, and fails with
+  # "version `GLIBC_2.3x' not found" everywhere older. Static linking makes
+  # the binary's own node-of-origin irrelevant. CONDA_PREFIX/lib already
+  # has libgsl.a/libgslcblas.a/libz.a (pulled in as transitive deps of other
+  # packages), and glibc-static is required on the build host for libc.a.
+  CONDA_LIBGSL_A="$CONDA_PREFIX/lib/libgsl.a"
+  CONDA_LIBGSLCBLAS_A="$CONDA_PREFIX/lib/libgslcblas.a"
+  CONDA_LIBZ_A="$CONDA_PREFIX/lib/libz.a"
+  STATIC_OK=1
+  for a in "$CONDA_LIBGSL_A" "$CONDA_LIBGSLCBLAS_A" "$CONDA_LIBZ_A"; do
+    [[ -s "$a" ]] || STATIC_OK=0
+  done
   (
     cd "$BUILD/preseq"
-    make all CXXFLAGS="-O2 -Wall -fno-common" CFLAGS="-O2 -fcommon"
+    if [[ "$STATIC_OK" == "1" ]] && \
+       make all CXXFLAGS="-O2 -Wall -fno-common -static" CFLAGS="-O2 -fcommon -static" \
+         LIBS="$CONDA_LIBGSL_A $CONDA_LIBGSLCBLAS_A $CONDA_LIBZ_A" 2>/tmp/preseq_static_build.$$.log; then
+      echo "[OK] Built bam2mr/preseq fully statically (portable across heterogeneous cluster nodes)"
+    else
+      echo "[WARN] Static build unavailable (missing glibc-static or conda's static GSL/zlib archives)." >&2
+      echo "[WARN] Falling back to a dynamically-linked build -- this WILL fail with" >&2
+      echo "[WARN] 'GLIBC_2.3x not found' on any LSF compute node whose glibc is older" >&2
+      echo "[WARN] than this build host's. See $TARGET/build log above/at /tmp/preseq_static_build.$$.log" >&2
+      make clean >/dev/null 2>&1 || true
+      make all CXXFLAGS="-O2 -Wall -fno-common" CFLAGS="-O2 -fcommon"
+    fi
   )
   mkdir -p "$TARGET/bin"
   install -m 755 "$BUILD/preseq/preseq" "$TARGET/bin/preseq"
