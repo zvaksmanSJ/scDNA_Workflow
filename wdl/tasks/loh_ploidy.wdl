@@ -86,13 +86,21 @@ EOF
 
     # FREEC names its own output files after the input BAM's basename;
     # rename them to this cell's own sample_id-based naming convention so
-    # WDL's `output {}` paths below can find them.
+    # WDL's `output {}` paths below can find them. In normal use `bam` is
+    # already named "~{sample_id}.dedup.bam" (align's own output
+    # convention), so source and destination are often IDENTICAL here --
+    # `mv` refuses a same-file rename ("are the same file"), which failed
+    # every single cell since this coincidence is the pipeline's normal
+    # case, not an edge case. Only rename when actually different.
     BAM_BASENAME=$(basename ~{bam})
     test -s "${BAM_BASENAME}_CNVs"
-    mv "${BAM_BASENAME}_CNVs" "~{sample_id}.dedup.bam_CNVs"
-    mv "${BAM_BASENAME}_ratio.txt" "~{sample_id}.dedup.bam_ratio.txt"
-    mv "${BAM_BASENAME}_BAF.txt" "~{sample_id}.dedup.bam_BAF.txt" || true
-    mv "${BAM_BASENAME}_info.txt" "~{sample_id}.dedup.bam_info.txt"
+    rename_if_different() {
+      [ "$1" = "$2" ] || mv "$1" "$2"
+    }
+    rename_if_different "${BAM_BASENAME}_CNVs" "~{sample_id}.dedup.bam_CNVs"
+    rename_if_different "${BAM_BASENAME}_ratio.txt" "~{sample_id}.dedup.bam_ratio.txt"
+    [ -s "${BAM_BASENAME}_BAF.txt" ] && rename_if_different "${BAM_BASENAME}_BAF.txt" "~{sample_id}.dedup.bam_BAF.txt" || true
+    rename_if_different "${BAM_BASENAME}_info.txt" "~{sample_id}.dedup.bam_info.txt"
     rm -rf "$CHROM_FASTA_DIR"
   >>>
   output {
