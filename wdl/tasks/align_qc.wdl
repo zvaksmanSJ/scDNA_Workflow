@@ -54,6 +54,15 @@ task AlignTrimQC {
     set -euo pipefail
     source "$(conda info --base)/etc/profile.d/conda.sh"
     conda activate ~{conda_env}
+    # bam2mr/preseq-bioskryb are prebuilt BioSkryb binaries (not built by conda)
+    # that are dynamically linked against a system-wide libgsl.so.25. `conda
+    # activate` does not set LD_LIBRARY_PATH, so on any compute node whose
+    # system image lacks the gsl package these fail with "error while loading
+    # shared libraries: libgsl.so.25: cannot open shared object file" even
+    # though command -v finds them fine. The conda env itself already carries
+    # a compatible libgsl (pulled in transitively by another dependency), so
+    # point there explicitly to make this portable across heterogeneous nodes.
+    export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 
     # ---- setup: output dirs + fail fast if any required tool is missing ----
     mkdir -p bam qc/fastp qc/fastqc_raw qc/fastqc_trimmed qc/picard qc/preseq trimmed_fastq
