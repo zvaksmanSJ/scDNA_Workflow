@@ -364,9 +364,17 @@ if [[ "${SKIP_CONTAINERS:-0}" != "1" ]]; then
     rm -rf "${VEP_CACHE_DIR}/homo_sapiens"
   fi
 
-  # SnpEff database (downloaded through the conda env's own snpEff binary)
+  # SnpEff database (downloaded through the conda env's own snpEff binary).
+  # NOTE: deliberately NOT derived from ENSEMBL_RELEASE -- snpEff's own
+  # database catalog does not track Ensembl release numbers 1:1, so
+  # "GRCh38.${ENSEMBL_RELEASE}" (e.g. "GRCh38.111") is not a real snpEff
+  # database and fails immediately with "Property: 'GRCh38.111.genome' not
+  # found" the moment any cell's SnpEffAnnotate task runs -- this broke
+  # every cell in a live run. GRCh38.105 is the latest standard numbered
+  # build snpEff 5.1 actually publishes; run `snpEff databases | grep
+  # GRCh38` to check for anything newer before changing this.
   conda activate wdl-resolveome-align
-  SNPEFF_DB_NAME="GRCh38.${ENSEMBL_RELEASE}"
+  SNPEFF_DB_NAME="GRCh38.105"
   if ! snpEff databases 2>/dev/null | grep -q "${SNPEFF_DB_NAME}"; then
     log "Downloading snpEff DB: ${SNPEFF_DB_NAME} (best effort)"
     snpEff download -v "${SNPEFF_DB_NAME}" || warn "snpEff DB download failed; you may need a different snpeff_db value"

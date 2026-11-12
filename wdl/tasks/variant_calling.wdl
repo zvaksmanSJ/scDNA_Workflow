@@ -325,7 +325,9 @@ task SnpEffAnnotate {
   input {
     String sample_id
     File merged_vep_vcf
-    String snpeff_db = "GRCh38.111"
+    String snpeff_db = "GRCh38.105"   # see main.wdl's own snpeff_db comment: snpEff's
+                                        # database catalog does not track Ensembl release
+                                        # numbers 1:1, GRCh38.105 is its latest real build
     Int snpeff_heap_mb = 8000
     String conda_env = "wdl-resolveome-align"
   }

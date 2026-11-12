@@ -96,8 +96,12 @@ workflow ResolveOmeDnaWorkflow {
     File vep_sif                   # apptainer/singularity .sif, pulled by setup.sh
     File vep_cache_dir_tar         # tarball of the Ensembl VEP species cache, downloaded by setup.sh
     Int vep_cache_version = 111
-    String snpeff_db = "GRCh38.111"   # snpEff database name -- MUST match setup.sh's ENSEMBL_RELEASE
-                                        # (default 111), since setup.sh downloads "GRCh38.${ENSEMBL_RELEASE}"
+    String snpeff_db = "GRCh38.105"   # snpEff's own database catalog does NOT track Ensembl release
+                                        # numbers 1:1 -- "GRCh38.111" (matching ENSEMBL_RELEASE) is not
+                                        # a real snpEff database and fails immediately with "Property:
+                                        # 'GRCh38.111.genome' not found"; GRCh38.105 is the latest
+                                        # standard numbered build snpEff 5.1 actually publishes (run
+                                        # `snpEff databases | grep GRCh38` to check for anything newer)
 
     # ---- Per-cell QC gate (BaseJumper-derived composite score): tasks/cell_qc_gate.wdl ----
     # Runs right after Stage 1, before any downstream analysis. A cell that
