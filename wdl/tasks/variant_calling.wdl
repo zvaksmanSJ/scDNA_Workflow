@@ -52,11 +52,11 @@ task PlanChunks {
 }
 
 # Runs once per (cell, genomic chunk) pair -- small-variant calling via
-# DeepVariant (free, BSD-3, Google). Two modes, chosen by whether
-# deepvariant_model_dir_tar is set (see each branch's own comment below):
-#   - unset (default, general-purpose): a single `run_deepvariant
+# DeepVariant (free, BSD-3, Google). Two modes, chosen by dv_has_custom_model
+# (see each branch's own comment below):
+#   - false (default, general-purpose): a single `run_deepvariant
 #     --model_type=WGS` call using DeepVariant's own bundled model
-#   - set (this project's own real-cohort run): the lower-level 3-step
+#   - true (this project's own real-cohort run): the lower-level 3-step
 #     make_examples/call_variants/postprocess_variants pipeline against a
 #     custom checkpoint (e.g. BioSkryb's private single-cell sc_af model),
 #     optionally with an allele-frequency population-VCF channel
@@ -71,18 +71,31 @@ task DeepVariantChunk {
     String chunk_id       # e.g. "1_1_20000000"
     String canonical_chrom  # e.g. "1" -- used to look up the matching population VCF, if any
     File deepvariant_sif
-    File? deepvariant_model_dir_tar   # optional tarball of a CUSTOM model dir (ckpt.index + ckpt.data-*).
-                                       # Leave unset (default) for the general-purpose free path, which
-                                       # uses DeepVariant's own bundled --model_type=WGS model and needs
-                                       # no extra download at all. Only set this if you have your own
-                                       # (e.g. BioSkryb's private single-cell sc_af) checkpoint -- see
-                                       # setup.sh for how the real cohort run in this project used one.
+    # These two are always-present Files (never File?) plus a companion
+    # Boolean flag, NOT a raw File? -- see main.wdl's call site comment:
+    # Cromwell 87 cannot materialize an UNSET File? workflow input at the
+    # scatter-inside-if-inside-scatter depth this task is called from, so
+    # the caller always passes *some* File (a real tar, or an inert
+    # placeholder when the caller has no tar) and tells us via the Boolean
+    # whether to actually use it.
+    File deepvariant_model_dir_tar   # real tarball of a CUSTOM model dir (ckpt.index + ckpt.data-*)
+                                       # when dv_has_custom_model is true; otherwise an unused placeholder.
+                                       # Leave the caller-side source unset (default) for the
+                                       # general-purpose free path, which uses DeepVariant's own
+                                       # bundled --model_type=WGS model and needs no extra download at
+                                       # all. Only provide one if you have your own (e.g. BioSkryb's
+                                       # private single-cell sc_af) checkpoint -- see setup.sh for how
+                                       # the real cohort run in this project used one.
+    Boolean dv_has_custom_model = false
     String deepvariant_checkpoint_filename = "sc_af.model.ckpt"
-    File? population_vcfs_tar          # optional tar of per-chromosome AF population VCFs,
-                                        # named cohort-chr<N>.release_missing2ref.no_calls.vcf.gz
-                                        # (only meaningful together with deepvariant_model_dir_tar --
+    File population_vcfs_tar          # real tar of per-chromosome AF population VCFs, named
+                                        # cohort-chr<N>.release_missing2ref.no_calls.vcf.gz, when
+                                        # dv_has_population_vcfs is true; otherwise an unused
+                                        # placeholder (only meaningful together with a custom model --
                                         # BioSkryb-private resource for our own real cohort -- see
-                                        # setup.sh; leave unset for a general deployment)
+                                        # setup.sh; leave the caller-side source unset for a general
+                                        # deployment)
+    Boolean dv_has_population_vcfs = false
     Boolean use_allele_frequency = false
     String conda_env = "wdl-resolveome-align"
     Int threads = 8
@@ -94,7 +107,7 @@ task DeepVariantChunk {
     TMPBASE=$(mktemp -d)
     APPTAINER_BIN=$(command -v apptainer || command -v singularity)
 
-    if [ -n "~{default='' deepvariant_model_dir_tar}" ]; then
+    if [ "~{dv_has_custom_model}" == "true" ]; then
       # ---- Custom-checkpoint path (e.g. BioSkryb's private single-cell sc_af model) ----
       MODELBASE=$(mktemp -d)
       tar -xf ~{deepvariant_model_dir_tar} -C "$MODELBASE"
@@ -103,7 +116,7 @@ task DeepVariantChunk {
 
       population_arg=""
       af_arg=""
-      if ~{use_allele_frequency} && [ -n "~{default='' population_vcfs_tar}" ]; then
+      if ~{use_allele_frequency} && [ "~{dv_has_population_vcfs}" == "true" ]; then
         POPDIR=$(mktemp -d)
         tar -xf ~{population_vcfs_tar} -C "$POPDIR"
         POP_VCF="$POPDIR/cohort-chr~{canonical_chrom}.release_missing2ref.no_calls.vcf.gz"

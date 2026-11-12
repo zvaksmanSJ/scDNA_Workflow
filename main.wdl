@@ -218,6 +218,26 @@ workflow ResolveOmeDnaWorkflow {
       conda_env = conda_env,
   }
 
+  # DeepVariantChunk is called from a scatter-inside-if-inside-scatter (per
+  # cell x per QC-pass x per genome chunk, further down). Cromwell 87 has a
+  # confirmed engine bug where a File? workflow input that is actually UNSET
+  # fails materialization at that 3-level nesting depth ("Failed to lookup
+  # input value for required input ...") even though the very same File?
+  # works fine when it IS set, or when nested only 1-2 levels deep --
+  # live-verified in isolation with a minimal repro WDL. deepvariant_model_dir_tar/
+  # population_vcfs_tar are routinely left unset in the free path (see their
+  # own "intentionally omitted" comment in example_inputs.json), so this was
+  # hit by every single cell. Workaround: never let the *value* passed into
+  # the nested scatter be unset -- precompute whether it was really provided
+  # (plain Boolean, never optional) plus an always-present File (the real
+  # tar if given, else ref_fasta_fai as an inert placeholder that the task
+  # never actually reads when the flag is false) here, OUTSIDE any
+  # scatter/if, and thread both through instead of the raw File?.
+  Boolean dv_has_custom_model = defined(deepvariant_model_dir_tar)
+  Boolean dv_has_population_vcfs = defined(deepvariant_population_vcfs_tar)
+  File dv_model_dir_tar_or_placeholder = select_first([deepvariant_model_dir_tar, ref_fasta_fai])
+  File dv_population_vcfs_tar_or_placeholder = select_first([deepvariant_population_vcfs_tar, ref_fasta_fai])
+
   scatter (i in range(length(sample_ids))) {
     # ===========================================================================
     # STAGE 3 (CNVkit half only) -- run BEFORE the QC gate below, deliberately.
@@ -291,9 +311,11 @@ workflow ResolveOmeDnaWorkflow {
             chunk_id = chunk[5],
             canonical_chrom = chunk[1],
             deepvariant_sif = deepvariant_sif,
-            deepvariant_model_dir_tar = deepvariant_model_dir_tar,
+            deepvariant_model_dir_tar = dv_model_dir_tar_or_placeholder,
+            dv_has_custom_model = dv_has_custom_model,
             deepvariant_checkpoint_filename = deepvariant_checkpoint_filename,
-            population_vcfs_tar = deepvariant_population_vcfs_tar,
+            population_vcfs_tar = dv_population_vcfs_tar_or_placeholder,
+            dv_has_population_vcfs = dv_has_population_vcfs,
             use_allele_frequency = dv_use_allele_frequency,
             conda_env = conda_env,
         }
