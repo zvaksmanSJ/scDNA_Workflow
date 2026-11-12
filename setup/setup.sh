@@ -238,6 +238,15 @@ if [[ "${SKIP_REFERENCE:-0}" != "1" ]]; then
   fi
 
   [[ -s "${FA}.fai" ]] || samtools faidx "${FA}"
+
+  # Whole-genome BED (chrom, 0, length per contig) derived from the .fai,
+  # used as the default metrics_intervals_bed. A raw .fai is NOT valid BED --
+  # its columns (name, length, offset, linebases, linewidth) are misread as
+  # (chrom, start, end) and crash `samtools depth -b` on the very first line.
+  GENOME_BED="${GENOME_DIR}/GRCh38.primary.genome.bed"
+  [[ -s "${GENOME_BED}" ]] || \
+    awk 'BEGIN{OFS="\t"}{print $1, 0, $2}' "${FA}.fai" > "${GENOME_BED}"
+
   [[ -s "${GENOME_DIR}/GRCh38.primary.dict" ]] || \
     picard CreateSequenceDictionary R="${FA}" O="${GENOME_DIR}/GRCh38.primary.dict"
   [[ -s "${FA}.0123" && -s "${FA}.bwt.2bit.64" ]] || bwa-mem2 index "${FA}"
