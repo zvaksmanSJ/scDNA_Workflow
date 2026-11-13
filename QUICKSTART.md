@@ -140,6 +140,16 @@ xdg-open /path/to/results/dashboards/dashboard.html   # `open` on macOS
 See `README.md`'s "Where are my results?" section for what every folder
 under `<dest>/` contains.
 
+**Live-verified end-to-end**: steps 1-5 above were run for real, in full,
+on a 10-cell test cohort via `cromwell_lsf.conf` -- every stage succeeded
+(align, QC gate, CNVkit, DeepVariant, VEP, SnpEff, Manta, Control-FREEC,
+phasing, mutational signatures, lineage reconstruction) and
+`organize_outputs.py` produced a real, working `dashboards/dashboard.html`
+from the actual Cromwell outputs. If you hit a failure anywhere in this
+chain that isn't already covered by this guide or `README.md`, it's worth
+double-checking you're on the latest `main` -- several real bugs in this
+exact path (not just docs) were found and fixed this way.
+
 ## Worked example: a quick smoke test with small subsampled FASTQs
 
 If you just want to confirm the whole chain works end to end before
