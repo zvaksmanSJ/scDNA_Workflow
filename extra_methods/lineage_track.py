@@ -229,19 +229,46 @@ def main():
             "--mpboot_bootstrap", str(args.mpboot_bootstrap),
         ]
     else:
+        # NOTE: --gender/--mpboot_bootstrap are deliberately NOT passed here
+        # (unlike the sequoia_sif branch above): those are only recognized by
+        # BioSkryb's private rscript_sequoia_build_phylogeny_only.R wrapper.
+        # The public upstream Sequoia build_phylogeny.R used in this free
+        # path has neither option -- optparse rejects any unknown long flag
+        # outright ("error: long flag '...' is invalid"), which previously
+        # failed the lineage task for every real run before it ever reached
+        # the tree-building logic itself. args.gender is still used above
+        # for this script's own Python-side VAF math; it's just not
+        # forwarded to the R script in this branch.
         cmd = [
             "Rscript", str(args.sequoia_script),
             "--donor_id", args.donor_id,
             "--input_nv", str(nv_path),
             "--input_nr", str(nr_path),
             "--output_dir", str(args.output_dir) + "/",
-            "--gender", args.gender,
             "--mpboot_path", args.mpboot_path,
-            "--mpboot_bootstrap", str(args.mpboot_bootstrap),
         ]
     print("[CMD]", " ".join(cmd))
-    subprocess.run(cmd, check=True)
-    print("[OK] Sequoia lineage reconstruction complete")
+    try:
+        subprocess.run(cmd, check=True)
+        print("[OK] Sequoia lineage reconstruction complete")
+    except subprocess.CalledProcessError as e:
+        # Sequoia's tree-building step can fail on legitimately-impossible
+        # inputs -- e.g. a cohort with essentially no mutations shared
+        # across 2+ cells (all-singleton data), which a shallow/downsampled
+        # sequencing run can easily produce even though it's rare with
+        # real production-depth data. The NV/NR matrices above are already
+        # written and valid regardless; treat an unbuildable tree the same
+        # way align_qc.wdl's preseq step already treats an unfittable
+        # model: a clear, non-fatal status marker instead of crashing the
+        # whole task (and therefore the whole cohort-wide workflow).
+        print(f"[WARN] {args.donor_id}: Sequoia tree build failed (exit "
+              f"{e.returncode}) -- likely too few shared informative sites "
+              "in this cohort for a meaningful tree; NV/NR matrices are "
+              "still valid. See R output above for the underlying error.")
+        status_path = args.output_dir / f"{args.donor_id}_lineage.status.tsv"
+        with status_path.open("w") as f:
+            f.write("status\treason\n")
+            f.write(f"NOT_COMPUTABLE\tSequoia tree build failed (exit {e.returncode})\n")
 
 
 if __name__ == "__main__":

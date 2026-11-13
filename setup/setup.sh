@@ -511,6 +511,46 @@ if [[ "${SKIP_LINEAGE:-0}" != "1" ]]; then
   fi
   log "Lineage tools ready: ${SEQUOIA_DIR}/Sequoia, ${MPBOOT_DIR}"
   log "Use --sequoia-script \${SEQUOIA_DIR}/Sequoia/build_phylogeny.R --mpboot-path <mpboot bin dir> with lineage_track.py/verify_lineage.py"
+
+  # Sequoia's build_phylogeny.R auto-installs any of its R package
+  # dependencies that are missing (install.packages()/BiocManager::install()/
+  # devtools::install_git()) -- but that happens inside the actual lineage
+  # task, which runs wherever LSF schedules it; this cluster's compute nodes
+  # are not guaranteed reliable general internet egress (confirmed
+  # unreliable even for CRAN's own package index during live testing), so a
+  # runtime install can fail unpredictably depending on which node gets
+  # picked. Pre-install everything here (on the host running setup.sh,
+  # which does have reliable egress) so the real task's own require() checks
+  # all short-circuit and never need the network at all.
+  conda env update -n mutsig -f - <<YAML
+name: mutsig
+channels: [conda-forge, bioconda, defaults]
+dependencies:
+  - r-ggplot2
+  - r-ape
+  - r-seqinr
+  - r-stringr
+  - r-data.table
+  - r-tidyr
+  - r-dplyr
+  - r-vgam
+  - r-devtools
+  - r-remotes
+  - r-biocmanager
+  - bioconductor-rsamtools
+  - bioconductor-genomicranges
+YAML
+
+  # treemut (GPLv3) has no CRAN/Bioconductor/conda package at all -- it's
+  # only ever installed via devtools::install_git() straight from GitHub.
+  # Pre-install it the same way build_phylogeny.R would, just once here.
+  conda activate mutsig
+  if ! Rscript -e 'quit(status=!requireNamespace("treemut", quietly=TRUE))' 2>/dev/null; then
+    log "Installing treemut (R package, GitHub-only, GPLv3) into mutsig env"
+    Rscript -e 'if (!requireNamespace("devtools", quietly=TRUE)) install.packages("devtools", repos="https://cran.r-project.org"); devtools::install_git("https://github.com/NickWilliamsSanger/treemut")'
+  else
+    echo "[OK] treemut already installed in mutsig env"
+  fi
 else
   log "SKIP_LINEAGE=1 -- skipping Sequoia/MPBoot install"
 fi

@@ -64,7 +64,24 @@ def main():
 
     primary_tree = find_tree_file(args.primary_lineage_dir, args.donor_id)
     if primary_tree is None:
-        raise SystemExit(f"Primary tree not found in {args.primary_lineage_dir}")
+        # Matches lineage_track.py's own graceful handling (same underlying
+        # cause -- see its NOT_COMPUTABLE comment): if the primary build
+        # never produced a tree at all (e.g. a cohort with too few shared
+        # informative sites), there is nothing to verify. Write the two
+        # required outputs with a clear status instead of crashing this
+        # task, which would otherwise fail the whole cohort-wide workflow
+        # over an already-reported, non-fatal upstream limitation.
+        print(f"[WARN] No primary tree found in {args.primary_lineage_dir} "
+              "-- BuildLineageTree likely found too few shared informative "
+              "sites to build one; skipping verification.")
+        bootstrap_out = args.output_dir / "bootstrap_support_report.tsv"
+        summary_out = args.output_dir / "verification_summary.json"
+        bootstrap_out.write_text("status\treason\n"
+                                  "NOT_COMPUTABLE\tNo primary tree available to verify\n")
+        summary_out.write_text(
+            '{"status": "NOT_COMPUTABLE", '
+            '"reason": "No primary tree available to verify"}\n')
+        return
     print(f"[INFO] Primary tree: {primary_tree}")
 
     resample_tree = None
